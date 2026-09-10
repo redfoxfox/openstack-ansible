@@ -4,7 +4,7 @@ Configuring the inventory
 =========================
 
 In this chapter, you can find the information on how to configure
-the openstack-ansible dynamic inventory to your needs.
+the OpenStack-Ansible dynamic inventory to your needs.
 
 Introduction
 ~~~~~~~~~~~~
@@ -26,13 +26,10 @@ To understand how the dynamic inventory works, see
 
 .. warning::
 
-   Never edit or delete the files
-   ``/etc/openstack_deploy/openstack_inventory.json`` or
-   ``/etc/openstack_deploy/openstack_hostnames_ips.yml``. This can
-   lead to file corruptions, and problems with the inventory: hosts
-   and container could disappear and new ones would appear,
-   breaking your existing deployment.
-
+   Never edit or delete the file
+   ``/etc/openstack_deploy/openstack_inventory.json``. This can lead to
+   problems with the inventory: existng hosts and containers will be unmanaged
+   and new ones will be generated instead, breaking your existing deployment.
 
 Configuration constraints
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -92,7 +89,7 @@ have the following inside your ``openstack_user_config.yml``.
          ip: 172.39.123.13
          no_containers: true
 
-Example: Running galera on dedicated hosts
+Example: Running Galera on dedicated hosts
 ------------------------------------------
 
 For example, to run Galera directly on dedicated hosts, you would perform the
@@ -153,19 +150,143 @@ following steps:
 
 .. _affinity:
 
-Deploying 0 (or more than one) of component type per host
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Adding virtual nest groups
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If you want to create a custom group for arbitrary grouping of hosts and
+containers within these hosts but skip the generation of any new containers,
+you should use ``is_nest`` property under container_skel and skip defining
+``belongs_to`` structure. ``is_nest`` property will add host-containers as
+children to such a group.
+
+Example: Defining Availability Zones
+------------------------------------
+
+A good example of how ``is_nest`` property can be used is describing
+Availability Zones. As when operating multiple AZs it's handy to define
+AZ-specific variables, like AZ name, for all hosts in this AZ. And
+leveraging ``group_vars`` is best way of ensuring that all hosts that belong
+to same AZ have same configuration applied.
+
+Let's assume you have 3 controllers and each of them is placed
+in different Availability Zones. There is also a compute node in
+each Availability Zone. And we want each host or container that is placed
+physically in a specific AZ be part of it's own group (ie ``azN_all``)
+
+In order to achieve that we need:
+
+#. Define host groups in ``conf.d`` or ``openstack_user_config.yml`` to assign hosts
+   accordingly to their Availability Zones:
+
+   .. code-block:: yaml
+
+     az1_infra_hosts: &infra_az1
+       az1-infra1:
+         ip: 172.39.123.11
+
+     az2_infra_hosts: &infra_az2
+       az2-infra2:
+         ip: 172.39.123.12
+
+     az3_infra_hosts: &infra_az3
+       az3-infra3:
+         ip: 172.39.123.13
+
+     shared_infra_hosts: &controllers
+       <<: *infra_az1
+       <<: *infra_az2
+       <<: *infra_az3
+
+     az1_compute_hosts: &computes_az1
+       az1-compute01:
+         ip: 172.39.123.100
+
+     az2_compute_hosts: &computes_az2
+       az2-compute01:
+         ip: 172.39.123.150
+
+     az3_compute_hosts: &computes_az3
+       az3-compute01:
+         ip: 172.39.123.200
+
+     compute_hosts:
+       <<: *computes_az1
+       <<: *computes_az2
+       <<: *computes_az3
+
+     az1_hosts:
+       <<: *computes_az1
+       <<: *infra_az1
+
+     az2_hosts:
+       <<: *computes_az2
+       <<: *infra_az2
+
+     az3_hosts:
+       <<: *computes_az3
+       <<: *infra_az3
+
+#. Create ``env.d/az.yml`` file that will leverage ``is_nest`` property and allow
+   all infra containers to be part of the AZ group as well
+
+   .. code-block:: yaml
+
+     component_skel:
+       az1_containers:
+         belongs_to:
+           - az1_all
+       az1_hosts:
+         belongs_to:
+           - az1_all
+
+       az2_containers:
+         belongs_to:
+           - az2_all
+       az2_hosts:
+         belongs_to:
+           - az2_all
+
+       az3_containers:
+         belongs_to:
+           - az3_all
+       az3_hosts:
+         belongs_to:
+           - az3_all
+
+     container_skel:
+       az1_containers:
+         properties:
+           is_nest: true
+       az2_containers:
+         properties:
+           is_nest: true
+       az3_containers:
+         properties:
+           is_nest: true
+
+#. Now you can leverage ``group_vars`` file to apply a variable to all
+   containers and bare metal hosts in AZ.
+   For example ``/etc/openstack_deploy/group_vars/az1_all.yml``:
+
+   .. code-block:: yaml
+
+     ---
+     az_name: az1
+     cinder_storage_availability_zone: "{{ az_name }}"
+
+Deploying with no component type per host (or more than one)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 When OpenStack-Ansible generates its dynamic inventory, the affinity
 setting determines how many containers of a similar type are deployed on a
 single physical host.
 
-Using ``shared-infra_hosts`` as an example, consider this
+Using ``shared_infra_hosts`` as an example, consider this
 ``openstack_user_config.yml`` configuration:
 
 .. code-block:: yaml
 
-    shared-infra_hosts:
+    shared_infra_hosts:
       infra1:
         ip: 172.29.236.101
       infra2:
@@ -173,7 +294,7 @@ Using ``shared-infra_hosts`` as an example, consider this
       infra3:
         ip: 172.29.236.103
 
-Three hosts are assigned to the `shared-infra_hosts` group,
+Three hosts are assigned to the ``shared_infra_hosts`` group,
 OpenStack-Ansible ensures that each host runs a single database container,
 a single Memcached container, and a single RabbitMQ container. Each host has
 an affinity of 1 by default,  which means that each host runs one of each
@@ -185,7 +306,7 @@ your ``openstack_user_config.yml`` file would look as follows:
 
 .. code-block:: yaml
 
-    shared-infra_hosts:
+    shared_infra_hosts:
       infra1:
         affinity:
           rabbit_mq_container: 0
@@ -218,41 +339,24 @@ To omit a component from a deployment, you can use one of several options:
   you specify the component to run directly on a host by using the ``is_metal``
   property, a container is created for this component.
 
-Deploying using a different container technology
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Having SSH network different from OpenStack Management network
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. note::
+In some environments SSH network that is used to access nodes from deploy
+host and management network are different. In this case it's important that
+services were listening on correct network while ensure that Ansible use SSH
+network for accessing managed hosts. In these cases you can define
+``management_ip`` key while defining hosts in your ``openstack_user_config.yml``
+file.
 
-   While nspawn is an available containerization technology it should be
-   considered experemental at this time. Even though this subsystem is not yet
-   recommended for production, it is stable enough to introduce to the community
-   and something we'd like feedback on as we improve it over the next cycle.
+``management_ip`` will be used as ``management_address`` for the node, while
+``ip`` will be used as ``ansible_host`` for accessing node by SSH.
 
-OpenStack-Ansible presently supports two different container technologies, LXC
-and nspawn. These two container technologies can be used separately or together
-within the same cluster but has a limitation of only one setting per host.
-
-Using ``shared-infra_hosts`` as an example, consider this
-``openstack_user_config.yml`` configuration:
+Example:
 
 .. code-block:: yaml
 
-    shared-infra_hosts:
+    shared_infra_hosts:
       infra1:
-        ip: 172.29.236.101
-        container_vars:
-          container_tech: lxc
-      infra2:
-        ip: 172.29.236.102
-        container_vars:
-          container_tech: nspawn
-      infra3:
-        ip: 172.29.236.103
-
-In this example the three hosts are assigned to the `shared-infra_hosts` group,
-and will deploy containerized workloads using ``lxc`` on **infra1**, ``nspawn``
-on **infra2**, and ``lxc`` on **infra3**. Notice **infra3** does not define the
-``container_tech`` option because it not required. If this option is undefined
-the value will automatically be set to ``lxc`` within the generated inventory.
-The two supported options for the ``container_tech`` configuration variable are
-``lxc`` or ``nspawn``.
+        ip: 192.168.0.101
+        management_ip: 172.29.236.101

@@ -30,11 +30,14 @@ export SCRIPTS_PATH="$(dirname "$(readlink -f "${0}")")"
 # The git checkout root path
 export MAIN_PATH="$(dirname "${SCRIPTS_PATH}")"
 
-# The expected source series name
-export SOURCE_SERIES="stein"
+# The expected source series names
+export SUPPORTED_SOURCE_SERIES=("2025.1", "2025.2")
 
 # The expected target series name
-export TARGET_SERIES="train"
+export TARGET_SERIES="2026.1"
+
+# The expected OSA config dir
+export OSA_CONFIG_DIR="${OSA_CONFIG_DIR:-/etc/openstack_deploy}"
 
 ## Functions -----------------------------------------------------------------
 
@@ -44,7 +47,7 @@ function run_lock {
   run_item="$2"
   hashed_run_item=($(echo $run_item | md5sum))
 
-  upgrade_marker="/etc/openstack_deploy/upgrade-${TARGET_SERIES}/$hashed_run_item.complete"
+  upgrade_marker="${OSA_CONFIG_DIR}/upgrade-${TARGET_SERIES}/$hashed_run_item.complete"
 
   if [ ! -f "$upgrade_marker" ];then
     # note(sigmavirus24): use eval so that we properly turn strings like
@@ -85,24 +88,24 @@ function run_lock {
 }
 
 function check_for_current {
-    if [[ ! -d "/etc/openstack_deploy" ]]; then
+    if [[ ! -d "${OSA_CONFIG_DIR}" ]]; then
       echo "--------------ERROR--------------"
-      echo "/etc/openstack_deploy directory not found."
+      echo "${OSA_CONFIG_DIR} directory not found."
       echo "It appears you do not have a current environment installed."
       exit 2
     fi
 }
 
 function create_working_dir {
-    if [ ! -d  "/etc/openstack_deploy/upgrade-${TARGET_SERIES}" ]; then
-        mkdir -p "/etc/openstack_deploy/upgrade-${TARGET_SERIES}"
+    if [ ! -d  "${OSA_CONFIG_DIR}/upgrade-${TARGET_SERIES}" ]; then
+        mkdir -p "${OSA_CONFIG_DIR}/upgrade-${TARGET_SERIES}"
     fi
 }
 
 function bootstrap_ansible {
-    if [ ! -f "/etc/openstack_deploy/upgrade-${TARGET_SERIES}/bootstrap-ansible.complete" ]; then
+    if [ ! -f "${OSA_CONFIG_DIR}/upgrade-${TARGET_SERIES}/bootstrap-ansible.complete" ]; then
       "${SCRIPTS_PATH}/bootstrap-ansible.sh"
-      touch /etc/openstack_deploy/upgrade-${TARGET_SERIES}/bootstrap-ansible.complete
+      touch ${OSA_CONFIG_DIR}/upgrade-${TARGET_SERIES}/bootstrap-ansible.complete
     else
       echo "Ansible has been bootstrapped for ${TARGET_SERIES} already, skipping..."
     fi
@@ -120,20 +123,17 @@ function pre_flight {
 
     # Notify the user.
     echo -e "
-    This script will perform a ${SOURCE_SERIES^} to ${TARGET_SERIES^} upgrade.
+    This script will perform an upgrade from ${SOURCE_SERIES^}
+    to ${TARGET_SERIES^}.
+
     Once you start the upgrade there is no going back.
 
     Note that the upgrade targets impacting the data
     plane as little as possible, but assumes that the
     control plane can experience some down time.
 
-    This script executes a one-size-fits-all upgrade,
-    and given that the tests implemented for it are
-    not monitored as well as those for a greenfield
-    environment, the results may vary with each release.
-
     Please use it against a test environment with your
-    configurations to validate whether it suits your
+    configurations first to validate whether it suits your
     needs and does a suitable upgrade.
 
     Are you ready to perform this upgrade now?
@@ -148,9 +148,32 @@ function pre_flight {
     fi
 }
 
+function set_source_series {
+
+  if [ ${#SUPPORTED_SOURCE_SERIES[@]} -gt 1 ]; then
+    echo -e "
+    Upgrade to ${TARGET_SERIES^} is supported only from one of the following releases:
+    "
+    for release_id in ${!SUPPORTED_SOURCE_SERIES[@]}; do
+      option_id=${release_id}
+      echo -e "      $((++option_id)): ${SUPPORTED_SOURCE_SERIES[$release_id]^}"
+    done
+    echo -e ""
+    read -p '    Please specify the release to upgrade from [1]: ' SELECTED_OPTION
+    SOURCE_OPTION=${SELECTED_OPTION:-1}
+    export SOURCE_SERIES=${SUPPORTED_SOURCE_SERIES[$((--SOURCE_OPTION))]}
+
+  else
+    export SOURCE_SERIES=${SUPPORTED_SOURCE_SERIES[0]}
+  fi
+}
+
 ## Main ----------------------------------------------------------------------
 
 function main {
+    if [ -z "${SOURCE_SERIES+defined}" ]; then
+      set_source_series
+    fi
     pre_flight
     check_for_current
     create_working_dir
@@ -158,35 +181,33 @@ function main {
     # Backup source series artifacts
     source_series_backup_file="/openstack/backup-openstack-ansible-${SOURCE_SERIES}.tar.gz"
     if [[ ! -e ${source_series_backup_file} ]]; then
-      tar zcf ${source_series_backup_file} /etc/openstack_deploy /etc/ansible/ /usr/local/bin/openstack-ansible.rc
+      tar zcf ${source_series_backup_file} ${OSA_CONFIG_DIR} /etc/ansible/ /usr/local/bin/openstack-ansible.rc
     fi
 
-    # ANSIBLE_INVENTORY may be set to a previous/incorrect location. To
-    # ensure this is not the case, we unset the environment variable.
+    # Environment variables may be set to a previous/incorrect location.
+    # To ensure this is not the case, we unset the environment variable.
     unset ANSIBLE_INVENTORY
 
     bootstrap_ansible
 
-    pushd ${MAIN_PATH}/playbooks
-        RUN_TASKS+=("${SCRIPTS_PATH}/upgrade-utilities/deploy-config-changes.yml")
-        # we don't want to trigger container restarts for galera and rabbit
-        # but as there will be no hosts available for metal deployments,
-        # as a fallback option we just run setup-hosts.yml without any arguments
-        RUN_TASKS+=("setup-hosts.yml --limit '!galera_all:!rabbitmq_all' && \
-                     openstack-ansible setup-hosts.yml -e 'lxc_container_allow_restarts=false' --limit 'galera_all:rabbitmq_all' || \
-                     openstack-ansible setup-hosts.yml")
-        # upgrade infrastructure
-        RUN_TASKS+=("setup-infrastructure.yml -e 'galera_upgrade=true' -e 'rabbitmq_upgrade=true'")
-        # explicitly perform controlled galera cluster restart with new lxc config
-        RUN_TASKS+=("${SCRIPTS_PATH}/upgrade-utilities/galera-cluster-rolling-restart.yml")
-        # upgrade openstack
-        RUN_TASKS+=("setup-openstack.yml")
-        # Run the tasks in order
-        for item in ${!RUN_TASKS[@]}; do
-          echo "### NOW RUNNING: ${RUN_TASKS[$item]}"
-          run_lock $item "${RUN_TASKS[$item]}"
-        done
-    popd
+    RUN_TASKS+=("openstack.osa.upgrade.deploy_config_changes")
+    # we don't want to trigger container restarts for galera and rabbit
+    # but as there will be no hosts available for metal deployments,
+    # as a fallback option we just run setup_hosts.yml without any arguments
+    RUN_TASKS+=("openstack.osa.setup_hosts --limit '!galera_all:!rabbitmq_all' -e package_state=latest && \
+                  openstack-ansible openstack.osa.setup_hosts -e 'lxc_container_allow_restarts=false' --limit 'galera_all:rabbitmq_all' || \
+                  openstack-ansible openstack.osa.setup_hosts -e package_state=latest")
+    # upgrade infrastructure
+    RUN_TASKS+=("openstack.osa.setup_infrastructure -e 'galera_upgrade=true' -e 'rabbitmq_upgrade=true' -e package_state=latest")
+    # explicitly perform controlled galera cluster restart with new lxc config
+    RUN_TASKS+=("openstack.osa.tools.galera_cluster_rolling_restart")
+    # upgrade openstack
+    RUN_TASKS+=("openstack.osa.setup_openstack -e package_state=latest")
+    # Run the tasks in order
+    for item in ${!RUN_TASKS[@]}; do
+      echo "### NOW RUNNING: ${RUN_TASKS[$item]}"
+      run_lock $item "${RUN_TASKS[$item]}"
+    done
 }
 
 main

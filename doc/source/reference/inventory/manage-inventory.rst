@@ -3,12 +3,10 @@ Inspecting and manipulating the inventory
 
 .. warning::
 
-   Never edit or delete the files
-   ``/etc/openstack_deploy/openstack_inventory.json`` or
-   ``/etc/openstack_deploy/openstack_hostnames_ips.yml``. This can
-   lead to file corruptions, and problems with the inventory: hosts
-   and container could disappear and new ones would appear,
-   breaking your existing deployment.
+   Never edit or delete the file
+   ``/etc/openstack_deploy/openstack_inventory.json``. This can lead to
+   problems with the inventory: existng hosts and containers will be unmanaged
+   and new ones will be generated instead, breaking your existing deployment.
 
 The file ``scripts/inventory-manage.py`` is used to produce human readable
 output based on the ``/etc/openstack_deploy/openstack_inventory.json`` file.
@@ -42,6 +40,15 @@ A host can be removed with the ``--remove-item/-r`` parameter.
 Use the host's name as an argument.
 
 ..  _`dynamic inventory functionality`: https://docs.ansible.com/ansible/intro_dynamic_inventory.html
+
+Removing a group
+~~~~~~~~~~~~~~~~
+
+A host group can be removed with the ``--remove-group/-d`` parameter.
+
+Use the groups's name as an argument. You can repeat argument multiple times
+to remove several groups at once.
+
 
 Exporting host information
 ~~~~~~~~~~~~~~~~~~~~~~~~~~

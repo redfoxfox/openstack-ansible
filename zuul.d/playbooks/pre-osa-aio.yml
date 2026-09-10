@@ -17,30 +17,52 @@
   hosts: all[0]
   vars_files:
     - "{{ zuul.executor.work_root }}/osa-gate-scenario.yml"
+  vars:
+    _zuul_src_path: "{{ ansible_user_dir }}/src"
   tasks:
-    - name: Run bootstrap-ansible script
-      become: yes
+    - name: Mark OSA repository as safe
+      become: true
       become_user: root
-      shell: scripts/bootstrap-ansible.sh
+      community.general.git_config:
+        name: safe.directory
+        scope: global
+        value: "{{ _zuul_src_path }}/opendev.org/openstack/openstack-ansible"
+
+    - name: Run bootstrap-ansible script # noqa: no-changed-when
+      become: true
+      become_user: root
+      ansible.builtin.shell: scripts/bootstrap-ansible.sh
       args:
         chdir: "src/opendev.org/openstack/openstack-ansible"
         executable: /bin/bash
       environment:
         # ZUUL_SRC_PATH is used by tests/get-ansible-role-requirements to
         # where the CI provided git sources were cloned.
-        ZUUL_SRC_PATH: "{{ ansible_user_dir }}/src"
+        ZUUL_SRC_PATH: "{{ (action != 'shastest') | ternary(_zuul_src_path, '') }}"
         ANSIBLE_PACKAGE: "{{ ansible_package | default('') }}"
+        ANSIBLE_FORKS: 10
         SETUP_ARA: 'true'
-      when: action != 'upgrade'
-    - name: Run bootstrap-aio script
-      become: yes
+      when:
+        - "'upgrade' not in action"
+        - osa_pre_run_bootstrap | default(true)
+
+    - name: Run bootstrap-aio script # noqa: no-changed-when
+      become: true
       become_user: root
-      shell: scripts/bootstrap-aio.sh
+      ansible.builtin.shell: scripts/bootstrap-aio.sh
       args:
         chdir: "src/opendev.org/openstack/openstack-ansible"
         executable: /bin/bash
       environment:
+        # ZUUL_SRC_PATH is used by tests/roles/bootstrap-host
+        # symlink the zuul roles into /openstack/src
+        ZUUL_SRC_PATH: "{{ _zuul_src_path }}"
+        ZUUL_VARS_FILE: "{{ zuul_user_vars_file }}"
         SCENARIO: "{{ scenario }}"
         ACTION: "{{ action }}"
         INSTALL_METHOD: "{{ install_method }}"
-      when: action != 'upgrade'
+      when:
+        - "'upgrade' not in action"
+        - action != 'linters'
+        - action != 'shastest'
+        - osa_pre_run_bootstrap | default(true)

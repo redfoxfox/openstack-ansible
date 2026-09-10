@@ -14,10 +14,15 @@
 # limitations under the License.
 
 - name: Ensure the hosts file is templated appropriately
-  copy:
+  ansible.builtin.copy:
     content: |
       127.0.0.1 localhost
+
+      # the ip of the aio host on the mgmt network
       172.29.236.100 aio1.openstack.local aio1
+
+      # the ip of the external interface of the aio host
+      {{ bootstrap_host_public_address }} external.openstack.local external
 
       # The following lines are desirable for IPv6 capable hosts
       ::1 ip6-localhost ip6-loopback
@@ -27,21 +32,9 @@
       ff02::2 ip6-allrouters
       ff02::3 ip6-allhosts
     dest: /etc/hosts
-    backup: yes
+    backup: true
+    mode: "0644"
 
 - name: Ensure hostname is set
-  block:
-    - name: Set hostname using the Ansible module
-      hostname:
-        name: aio1
-  # NOTE(hwoarang) The hostname module does not work on Leap 15 because of
-  # https://bugzilla.novell.com/show_bug.cgi?id=997614
-  # As such we need to fallback to using the command directly.
-  # NOTE(evrardjp): Remove this when Ansible 2.8 is out, as Ansible now
-  # vendors in the distro python package, which _should_ technically help.
-  # (To be tested)
-  rescue:
-    - name: Set hostname using hostnamectl
-      command: hostnamectl set-hostname aio1
-  tags:
-    - skip_ansible_lint
+  ansible.builtin.hostname:
+    name: aio1

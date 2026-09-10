@@ -1,5 +1,5 @@
 ---
-# Copyright 2014, Rackspace US, Inc.
+# Copyright 2024, BBC R&D.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-- import_playbook: openstack-hosts-setup.yml
-- import_playbook: security-hardening.yml
-- import_playbook: containers-deploy.yml
+- name: Importing certificate_authority playbook
+  import_playbook: openstack.osa.setup_hosts

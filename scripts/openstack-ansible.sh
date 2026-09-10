@@ -43,7 +43,7 @@ if [[ "${PWD}" == *"${OSA_CLONE_ROOT}"* ]] || [ "${RUN_CMD}" == "openstack-ansib
   # Load ARA into callback plugins if it is installed
   # Dynamically retrieve the location of the ARA callback so we are able to find
   # it on both py2 and py3
-  ara_location=$(python -m ara.setup.callback_plugins || true)
+  ara_location=$(python -m ara.setup.callback_plugins 2>/dev/null || true)
   if [[ -n "$ara_location" ]]; then
     export ANSIBLE_CALLBACK_PLUGINS="${ANSIBLE_CALLBACK_PLUGINS}:${ara_location}"
   fi
@@ -53,6 +53,12 @@ if [[ "${PWD}" == *"${OSA_CLONE_ROOT}"* ]] || [ "${RUN_CMD}" == "openstack-ansib
      if [[ ! -f ${OSA_CONFIG_DIR}/inventory.ini ]]; then
         echo '[all]' > ${OSA_CONFIG_DIR}/inventory.ini
      fi
+  fi
+
+  OSA_USER_RC="${OSA_USER_RC:-${OSA_CONFIG_DIR}/user.rc}"
+
+  if [[ -f ${OSA_USER_RC} ]]; then
+    source ${OSA_USER_RC}
   fi
 
   # Check whether there are any user configuration files

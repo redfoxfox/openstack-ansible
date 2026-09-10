@@ -22,27 +22,28 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import imp
+from datetime import datetime
+
 import os
-import re
-import sys
 import subprocess
+import sys
 
 import openstackdocstheme
-import pbr.version
 import yaml
 
 # -- OpenStack-Ansible configuration --------------------------------------
 # Variables to override
 target_name = 'openstack-ansible'
 description = 'OpenStack-Ansible deploys OpenStack environments using Ansible.'
-previous_series_name = 'stein'
-current_series_name = 'train'
+previous_series_name = '2026.1 (Gazpacho)'
+previous_slurp_name = None
+current_series_name = '2026.2 (Hibiscus)'
 
-## General information about the project.
+# General information about the project.
+project = 'OpenStack-Ansible'
 author = 'OpenStack-Ansible Contributors'
 category = 'Miscellaneous'
-copyright = '2014-2018, OpenStack-Ansible Contributors'
+copyright = f'2014-{datetime.now().year}, OpenStack-Ansible Contributors'
 title = 'OpenStack-Ansible Documentation'
 
 # Smart variable replacements with what we can. The openstackdocstheme has
@@ -50,24 +51,34 @@ title = 'OpenStack-Ansible Documentation'
 current_series = openstackdocstheme.ext._get_series_name()
 
 if current_series == "latest":
-  latest_tag = "master"
-  branch = "master"
-  upgrade_warning = "Upgrading to master is not recommended. Master is under heavy development, and is not stable."
+    latest_tag = "master"
+    branch = "master"
+    upgrade_warning = ("Upgrading to master is not recommended. "
+                       "Master is under heavy development, and is not stable.")
 else:
-  series_names = current_series.capitalize()
-  latest_tag = pbr.version.VersionInfo('osa_toolkit').__str__()
-  branch = "stable/{}".format(current_series)
-  upgrade_warning = "The upgrade is always under active development."
+    series_names = current_series.capitalize()
+    latest_tag = subprocess.check_output(["git", "describe", "--abbrev=0",
+                                          "--tag"]).strip().decode()
+    branch = "stable/{}".format(current_series)
+    upgrade_warning = "The upgrade is always under active development."
 
 CONF_PATH = os.path.dirname(os.path.realpath(__file__))
-GNOCCHI_DETAILS = '../../playbooks/defaults/repo_packages/gnocchi.yml'
+GNOCCHI_DETAILS = '../../inventory/group_vars/gnocchi_all/source_git.yml'
 with open(os.path.join(CONF_PATH, GNOCCHI_DETAILS), 'r') as fdesc:
     gnocchi_file_content = yaml.safe_load(fdesc)
     gnocchi_branch = gnocchi_file_content['gnocchi_git_track_branch']
 
 # References variable for substitutions
-deploy_guide_prefix = "https://docs.openstack.org/project-deploy-guide/openstack-ansible/{}/%s".format(current_series)
-dev_docs_prefix = "https://docs.openstack.org/openstack-ansible/{}/%s".format(current_series)
+deploy_guide_prefix = ("https://docs.openstack.org/"
+                       "project-deploy-guide/openstack-ansible/"
+                       "{}/%s".format(current_series))
+dev_docs_prefix = ("https://docs.openstack.org/openstack-ansible/"
+                   "{}/%s".format(current_series))
+
+if previous_slurp_name:
+    slurp_epilog = f"replace:: or {previous_slurp_name}"
+else:
+    slurp_epilog = "unicode:: U+200B"
 
 # Substitutions loader
 rst_epilog = """
@@ -78,19 +89,21 @@ rst_epilog = """
 .. |current_release_formal_name| replace:: {current_release_formal_name}
 .. |latest_tag| replace:: {latest_tag}
 .. |upgrade_warning| replace:: {upgrade_warning}
-""".format(
-  current_release_git_branch_name=branch,
-  current_release_gnocchi_git_branch_name=gnocchi_branch,
-  previous_series_name=previous_series_name,
-  previous_release_formal_name=previous_series_name.capitalize(),
-  current_release_formal_name=current_series_name.capitalize(),
-  latest_tag=latest_tag,
-  upgrade_warning=upgrade_warning,
+.. |previous_slurp_name| {slurp_epilog}
+""".format(  # noqa: E501
+    current_release_git_branch_name=branch,
+    current_release_gnocchi_git_branch_name=gnocchi_branch,
+    previous_series_name=previous_series_name.split(' ')[0],
+    previous_release_formal_name=previous_series_name,
+    current_release_formal_name=current_series_name,
+    slurp_epilog=slurp_epilog,
+    latest_tag=latest_tag,
+    upgrade_warning=upgrade_warning,
 )
 
 # Format: Reference name: (string containing %s for substitution, linkname)
 extlinks = {'deploy_guide': (deploy_guide_prefix, ''),
-            'dev_docs':  (dev_docs_prefix, '')
+            'dev_docs': (dev_docs_prefix, '')
 }
 
 # If extensions (or modules to document with autodoc) are in another directory,
@@ -110,8 +123,12 @@ extensions = [
     'openstackdocstheme',
     'sphinx.ext.autodoc',
     'sphinx.ext.extlinks',
-    'sphinxcontrib.rsvgconverter'
+    'sphinxcontrib.rsvgconverter',
+    'sphinx_copybutton'
 ]
+
+# Remove the prompt text from lines
+copybutton_prompt_text = "# "
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -126,14 +143,15 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # openstackdocstheme options
-repository_name = 'openstack/' + target_name
+openstackdocs_repo_name = 'openstack/' + target_name
+openstackdocs_pdf_link = True
 # The bug project is always the same for all our repos
-bug_project = 'openstack-ansible'
-bug_tag = ''
+openstackdocs_bug_project = 'openstack-ansible'
+openstackdocs_bug_tag = ''
 
 # The language for content autogenerated by Sphinx. Refer to documentation
 # for a list of supported languages.
-language = None
+language = 'en'
 
 # There are two options for replacing |today|: either, you set today to some
 # non-false value, then it is used:
@@ -143,9 +161,7 @@ language = None
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
-exclude_patterns = [
-  'admin/maintenance-tasks/galera.rst'
-]
+exclude_patterns = ['deploy-guide/*']
 
 # The reST default role (used for this markup: `text`) to use for all
 # documents.
@@ -163,7 +179,7 @@ exclude_patterns = [
 # show_authors = False
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'sphinx'
+pygments_style = 'native'
 
 # A list of ignored prefixes for module index sorting.
 # modindex_common_prefix = []
@@ -214,10 +230,6 @@ html_static_path = ['_static']
 # .htaccess) here, relative to this directory. These files are copied
 # directly to the root of the documentation.
 # html_extra_path = []
-
-# If not '', a 'Last updated on:' timestamp is inserted at every page bottom,
-# using the given strftime format.
-html_last_updated_fmt = '%Y-%m-%d %H:%M'
 
 # If true, SmartyPants will be used to convert quotes and dashes to
 # typographically correct entities.
@@ -272,7 +284,9 @@ latex_elements = {
     # 'pointsize': '10pt',
 
     # Additional stuff for the LaTeX preamble.
-    # 'preamble': '',
+    'preamble': r'''
+        \let\cleardoublepage=\clearpage
+    ''',
 }
 
 # Grouping the document tree into LaTeX files. List of tuples
@@ -326,7 +340,7 @@ man_pages = [
 #  dir menu entry, description, category)
 texinfo_documents = [
     (master_doc, target_name,
-     title, author, bug_project,
+     title, author, openstackdocs_bug_project,
      description, category),
 ]
 

@@ -1,0 +1,18 @@
+---
+skip_list:
+  - key-order[task]
+  - run-once[task]
+  - var-naming[no-role-prefix]
+
+warn_list:
+  - risky-shell-pipe
+  - no-handler
+
+extra_vars:
+  nova_hosts: nova_all
+  nova_serial: 100%
+  neutron_hosts: neutron_all
+  neutron_serial: 100%
+  cinder_hosts: cinder_all
+  cinder_serial: 100%
+  service_group: haproxy_all

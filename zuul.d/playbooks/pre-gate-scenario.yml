@@ -16,24 +16,22 @@
 - name: Calculate the dynamic OSA gate scenario
   hosts: all[0]
   vars:
-    scenario_map:
-      aodh: telemetry
-      ceilometer: telemetry
-      gnocchi: telemetry
     install_methods:
       - distro
       - source
+    zuul_user_vars_file: "{{ ansible_facts.env.HOME }}/osa-job-vars.yml"
+    zuul_gate_scenario_file: "{{ ansible_facts.env.HOME }}/osa-gate-scenario.yml"
   tasks:
     - name: Dynamically create scenario if not set
-      set_fact:
+      ansible.builtin.set_fact:
         scenario: |-
           {% set _scenario = [] %}
           {# Add the scenarios based on the job name #}
           {# ex. openstack-ansible-deploy-$scenario1_$scenario2-$os #}
-          {% if zuul.job is match('^openstack-ansible-(deploy|upgrade)-([^-]+)-.*$') %}
+          {% if zuul.job is match('^openstack-ansible-(deploy|upgrade_?[a-z,0-9,.]*)-([^-]+)-.*$') %}
           {%   set _ = _scenario.extend(
                  (zuul.job |
-                  regex_replace('^openstack-ansible-[a-z]*-([^-]+)-.*$', '\\1')).split('_')
+                  regex_replace('^openstack-ansible-[a-z,0-9,.,_]*-([^-]+)-.*$', '\\1')).split('_')
                )
           %}
           {#   If testing a role, add the role service name to the scenario list #}
@@ -41,12 +39,23 @@
           {%     set role_service_name = zuul.project.short_name |
                                        regex_replace('^openstack-ansible-os_(.*)$', '\\1')
           %}
-          {%     set _ = _scenario.append(role_service_name) %}
-          {#     Add special scenarios based on the project name #}
-          {%     if role_service_name in scenario_map %}
-          {%       set _ = _scenario.append(scenario_map[role_service_name]) %}
-          {%     endif %}
+          {%   elif zuul.project.short_name is match('^ansible-role-(.*)$') %}
+          {%     set role_service_name = zuul.project.short_name |
+                                       regex_replace('^ansible-role-(.*)$', '\\1')
+          %}
+          {%   elif zuul.project.short_name == 'ansible-hardening' %}
+          {%     set role_service_name = 'hardening' %}
+          {%   elif zuul.project.short_name == 'openstack-ansible' %}
+          {%     set role_service_name = 'integrated' %}
+          {%   elif zuul.project.short_name == 'openstack-ansible-plugins' %}
+          {%     set role_service_name = 'plugins' %}
           {%   endif %}
+          {%   if role_service_name is defined %}
+          {%     set _ = _scenario.append(role_service_name) %}
+          {%   endif %}
+          {% endif %}
+          {% if zuul.job is match('^openstack-ansible-(deploy|upgrade)-([^-]+)-validate') %}
+          {%   set _ = _scenario.append('validate') %}
           {% endif %}
           {# If running linters we need to provide name of the role as a scenario w/o splitting #}
           {% if zuul.job is match('^openstack-ansible-linters-.*$') %}
@@ -58,32 +67,36 @@
           %}
           {%     endif%}
           {%   endfor %}
+          {# Hardening role is special as our regular filters don't work for it #}
+          {%   if zuul.project.short_name == 'ansible-hardening' %}
+          {%     set _ = _scenario.append('hardening') %}
+          {%   endif %}
           {% endif %}
           {{ _scenario | join('_') }}
       when:
         - scenario is not defined
 
     - name: Dynamically set action if not set
-      set_fact:
-        action: "{{ zuul.job | regex_replace('^openstack-ansible-([^-]+)-.*$', '\\1') }}"
+      ansible.builtin.set_fact:
+        action: "{{ zuul.job | regex_replace('^openstack-ansible-([^-]+)-.*$', '\\1') }}" # noqa: var-naming[no-reserved]
       when:
         - action is not defined
 
     - name: Dynamically set install method if not set
-      set_fact:
+      ansible.builtin.set_fact:
         install_method: "{{ (scenario.split('_') | intersect(install_methods))[0] }}"
       when:
         - install_method is not defined
         - scenario.split('_') | intersect(install_methods) | length > 0
 
     - name: Set install method to source as a baseline default
-      set_fact:
+      ansible.builtin.set_fact:
         install_method: source
       when:
         - install_method is not defined
 
     - name: Print gate check configuration
-      debug:
+      ansible.builtin.debug:
         msg: |-
           Running gate-check-commit with the following arguments:
           Scenario: {{ scenario }}
@@ -94,7 +107,28 @@
     # Other playbooks can consume this vars file as shown in run.yml
     # This file is stored in work/osa-gate-scenario.yml on the Zuul executor
     - name: Log the gate check configuration to a vars file
-      template:
+      ansible.builtin.template:
         src: osa-gate-scenario.yml.j2
         dest: "{{ zuul.executor.work_root }}/osa-gate-scenario.yml"
+        mode: "0644"
       delegate_to: localhost
+
+    - name: Log the gate check configuration to a vars file on target host
+      ansible.builtin.template:
+        src: osa-gate-scenario.yml.j2
+        dest: "{{ zuul_gate_scenario_file }}"
+        mode: "0644"
+
+    # Other playbooks can consume this vars file to access the
+    # Zuul job variables, see https://zuul-ci.org/docs/zuul/reference/jobs.html#user-jobs-job-variables
+    - name: Record the zuul user job variables for future use by embedded ansible
+      vars:
+        zuul_helper_var:
+          zuul: "{{ zuul }}"
+          zuul_vars: "{{ zuul_job_vars | default({}) }}"
+        zuul_site_mirror_info_helper_var:
+          zuul_site_mirror_info: "{{ zuul_site_mirror_info | default({}) }}"
+      ansible.builtin.template:
+        src: osa-job-vars.yml.j2
+        dest: "{{ zuul_user_vars_file }}"
+        mode: "0644"

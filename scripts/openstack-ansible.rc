@@ -12,31 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+export LC_ALL="${LC_ALL:-C.UTF-8}"
+
 export OSA_CONFIG_DIR="${OSA_CONFIG_DIR:-/etc/openstack_deploy}"
 
-export ANSIBLE_RETRY_FILES_ENABLED="${ANSIBLE_RETRY_FILES_ENABLED:-False}"
+export ANSIBLE_RETRY_FILES_ENABLED="${ANSIBLE_RETRY_FILES_ENABLED:-false}"
 
 export ANSIBLE_INVENTORY="${ANSIBLE_INVENTORY:-OSA_INVENTORY_PATH/dynamic_inventory.py,OSA_INVENTORY_PATH/inventory.ini,${OSA_CONFIG_DIR}/inventory.ini}"
 
 export ANSIBLE_LOG_PATH="${ANSIBLE_LOG_PATH:-/openstack/log/ansible-logging/ansible.log}"
 mkdir -p "$(dirname ${ANSIBLE_LOG_PATH})" || unset ANSIBLE_LOG_PATH
 
-export ANSIBLE_ROLES_PATH="${ANSIBLE_ROLES_PATH:-/etc/ansible/roles:OSA_PLAYBOOK_PATH/roles:/etc/ansible/roles/ceph-ansible/roles}"
+export ANSIBLE_ROLES_PATH="${ANSIBLE_ROLES_PATH:-/etc/ansible/roles:/etc/ansible/roles/ceph-ansible/roles}"
 
-export ANSIBLE_LIBRARY="${ANSIBLE_LIBRARY:-/etc/ansible/roles/config_template/library:/etc/ansible/roles/plugins/library:/etc/ansible/roles/ceph-ansible/library}"
-export ANSIBLE_LOOKUP_PLUGINS="${ANSIBLE_LOOKUP_PLUGINS:-/etc/ansible/roles/plugins/lookup}"
-export ANSIBLE_FILTER_PLUGINS="${ANSIBLE_FILTER_PLUGINS:-/etc/ansible/roles/plugins/filter:/etc/ansible/roles/ceph-ansible/plugins/filter}"
-export ANSIBLE_ACTION_PLUGINS="${ANSIBLE_ACTION_PLUGINS:-/etc/ansible/roles/config_template/action:/etc/ansible/roles/plugins/action:/etc/ansible/roles/ceph-ansible/plugins/actions}"
-export ANSIBLE_CALLBACK_PLUGINS="${ANSIBLE_CALLBACK_PLUGINS:-/etc/ansible/roles/plugins/callback:/etc/ansible/roles/ceph-ansible/plugins/callback}"
-export ANSIBLE_TEST_PLUGINS="${ANSIBLE_TEST_PLUGINS:-/etc/ansible/roles/plugins/test}"
-export ANSIBLE_VARS_PLUGINS="${ANSIBLE_VARS_PLUGINS:-/etc/ansible/roles/plugins/vars_plugins}"
+export ANSIBLE_COLLECTIONS_PATH="${ANSIBLE_COLLECTIONS_PATH:-/etc/ansible}"
+
+export ANSIBLE_LOCAL_TEMP="${ANSIBLE_LOCAL_TEMP:-/tmp}"
+
+export ANSIBLE_LIBRARY="${ANSIBLE_LIBRARY:-/etc/ansible/roles/ceph-ansible/library}"
+export ANSIBLE_FILTER_PLUGINS="${ANSIBLE_FILTER_PLUGINS:-/etc/ansible/roles/ceph-ansible/plugins/filter}"
+export ANSIBLE_CALLBACK_PLUGINS="${ANSIBLE_CALLBACK_PLUGINS:-/etc/ansible/roles/ceph-ansible/plugins/callback}"
+export ANSIBLE_MODULE_UTILS="${ANSIBLE_MODULE_UTILS:-/etc/ansible/roles/ceph-ansible/module_utils}"
 
 export ANSIBLE_GATHERING="${ANSIBLE_GATHERING:-smart}"
-export ANSIBLE_GATHER_SUBSET="${ANSIBLE_GATHER_SUBSET:-network,hardware,virtual}"
 
 export ANSIBLE_CACHE_PLUGIN="${ANSIBLE_CACHE_PLUGIN:-jsonfile}"
 export ANSIBLE_CACHE_PLUGIN_CONNECTION="${ANSIBLE_CACHE_PLUGIN_CONNECTION:-${OSA_CONFIG_DIR}/ansible_facts}"
 export ANSIBLE_CACHE_PLUGIN_TIMEOUT="${ANSIBLE_CACHE_PLUGIN_TIMEOUT:-86400}"
+export ANSIBLE_INJECT_FACT_VARS="${ANSIBLE_INJECT_FACT_VARS:-false}"
 
 if [[ "${ANSIBLE_CACHE_PLUGIN}" == "memcached" ]];then
   if ! echo stats | nc -w 1 $(echo ${ANSIBLE_CACHE_PLUGIN_CONNECTION}|awk -F',' '{print $1}'|sed 's/:/ /') > /dev/null; then
@@ -44,14 +47,18 @@ if [[ "${ANSIBLE_CACHE_PLUGIN}" == "memcached" ]];then
   fi
 fi
 
-export ANSIBLE_HOST_KEY_CHECKING="${ANSIBLE_HOST_KEY_CHECKING:-False}"
+export ANSIBLE_HOST_KEY_CHECKING="${ANSIBLE_HOST_KEY_CHECKING:-false}"
 export ANSIBLE_TIMEOUT="${ANSIBLE_TIMEOUT:-5}"
-export ANSIBLE_TRANSPORT="${ANSIBLE_TRANSPORT:-ssh}"
-export ANSIBLE_SSH_PIPELINING="${ANSIBLE_SSH_PIPELINING:-True}"
+export ANSIBLE_TRANSPORT="${ANSIBLE_TRANSPORT:-openstack.osa.ssh}"
+export ANSIBLE_SSH_PIPELINING="${ANSIBLE_SSH_PIPELINING:-true}"
 export ANSIBLE_SSH_RETRIES="${ANSIBLE_SSH_RETRIES:-5}"
+export ANSIBLE_SSH_ARGS="${ANSIBLE_SSH_ARGS:--C -o ControlMaster=auto -o ControlPersist=300}"
 export ANSIBLE_PIPELINING="${ANSIBLE_SSH_PIPELINING}"
+export ANSIBLE_FORKS="${ANSIBLE_FORKS:-OSA_ANSIBLE_FORKS}"
 
-export ANSIBLE_STRATEGY_PLUGINS="${ANSIBLE_STRATEGY_PLUGINS:-/etc/ansible/roles/plugins/strategy}"
-export ANSIBLE_CONNECTION_PLUGINS="${ANSIBLE_CONNECTION_PLUGINS:-/etc/ansible/roles/plugins/connection}"
+export ANSIBLE_FORCE_HANDLERS="${ANSIBLE_FORCE_HANDLERS:-true}"
+export ANSIBLE_PYTHON_INTERPRETER="${ANSIBLE_PYTHON_INTERPRETER:-OSA_ANSIBLE_PYTHON_INTERPRETER}"
 
-export ANSIBLE_FORCE_HANDLERS="${ANSIBLE_FORCE_HANDLERS:-True}"
+export ANSIBLE_TRANSFORM_INVALID_GROUP_CHARS="${ANSIBLE_TRANSFORM_INVALID_GROUP_CHARS:-always}"
+
+export ANSIBLE_CALLBACK_RESULT_FORMAT="${ANSIBLE_CALLBACK_RESULT_FORMAT:-yaml}"

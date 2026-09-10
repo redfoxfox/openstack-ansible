@@ -3,12 +3,15 @@ Major upgrades
 ==============
 
 This guide provides information about the upgrade process from
-|previous_release_formal_name| to |current_release_formal_name|
-for OpenStack-Ansible.
+|previous_release_formal_name| |previous_slurp_name| to
+|current_release_formal_name| for OpenStack-Ansible.
 
 .. note::
 
-   You can only upgrade between sequential releases.
+   You can upgrade between sequential releases or between releases
+   marked as `SLURP`_.
+
+.. _SLURP: https://releases.openstack.org/
 
 Introduction
 ============
@@ -23,7 +26,19 @@ For more information about the major upgrade process, see
 
 .. warning::
 
-   |upgrade_warning| Test this on a development environment first.
+   Upgrading to master is not recommended. Master is under heavy
+   development, and is not stable. Test this on a development environment
+   first.
+
+.. note::
+
+    Please, make sure you have read through `release notes <https://docs.openstack.org/releasenotes/openstack-ansible/>`_
+    for the respective release. The automated playbook mentioned below does
+    not automate all possible changes, and it's up to operator to ensure
+    the state of their configuration before proceeding with the upgrade.
+
+    In case you are skipping releases through the SLURP policy, make sure
+    you have also checked release notes for the skipped release as well.
 
 .. _upgrading-by-using-a-script:
 
@@ -31,15 +46,15 @@ Upgrading by using a script
 ===========================
 
 The |current_release_formal_name| release series of OpenStack-Ansible contains
-the code for migrating from |previous_release_formal_name| to
-|current_release_formal_name|.
+the code for migrating from |previous_release_formal_name|
+|previous_slurp_name| to |current_release_formal_name|.
 
 Running the upgrade script
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-To upgrade from |previous_release_formal_name| to |current_release_formal_name|
-by using the upgrade script, perform the following steps in the
-``openstack-ansible`` directory:
+To upgrade from |previous_release_formal_name| |previous_slurp_name| to
+|current_release_formal_name| by using the upgrade script, perform the
+following steps in the ``openstack-ansible`` directory:
 
 #. Change directory to the repository clone root directory:
 
@@ -86,20 +101,6 @@ Ensure that your OpenStack-Ansible code is on the latest
 
     # git checkout |latest_tag|
 
-Prepare the shell variables
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Define these variables to reduce typing when running the remaining upgrade
-tasks. Because these environments variables are shortcuts, this step is
-optional. If you prefer, you can reference the files directly during the
-upgrade.
-
-.. code-block:: console
-
-    # cd /opt/openstack-ansible
-    # export MAIN_PATH="$(pwd)"
-    # export SCRIPTS_PATH="${MAIN_PATH}/scripts"
-
 Backup the existing OpenStack-Ansible configuration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -110,8 +111,8 @@ Make a backup of the configuration of the environment:
     # source_series_backup_file="/openstack/backup-openstack-ansible-|previous_series_name|.tar.gz"
     # tar zcf ${source_series_backup_file} /etc/openstack_deploy /etc/ansible/ /usr/local/bin/openstack-ansible.rc
 
-Bootstrap the new Ansible and OSA roles
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Bootstrap the new Ansible and OpenStack-Ansible roles
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To ensure that there is no currently set ANSIBLE_INVENTORY to override
 the default inventory location, we unset the environment variable.
@@ -126,63 +127,112 @@ dependencies are in place before you run playbooks from the
 
 .. code-block:: console
 
-    # ${SCRIPTS_PATH}/bootstrap-ansible.sh
+    # cd /opt/openstack-ansible
+    # ./scripts/bootstrap-ansible.sh
 
-Change to the playbooks directory
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Implement changes to OpenStack-Ansible configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Change to the playbooks directory to simplify the CLI commands from here on
-in the procedure, given that most playbooks executed are in this directory.
-
-.. code-block:: console
-
-    # cd playbooks
-
-Implement changes to OSA configuration
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-If there have been any OSA variable name changes or environment/inventory
-changes, there is a playbook to handle those changes to ensure service
-continuity in the environment when the new playbooks run. The playbook is
-tagged to ensure that any part of it can be executed on its own or skipped.
-Please review the contents of the playbook for more information.
+If there have been any OpenStack-Ansible variable name changes or
+environment/inventory changes, there is a playbook to handle those changes
+to ensure service continuity in the environment when the new playbooks run.
+The playbook is tagged to ensure that any part of it can be executed on
+its own or skipped. Please review the contents of the playbook for
+more information.
 
 .. code-block:: console
 
-    # openstack-ansible "${SCRIPTS_PATH}/upgrade-utilities/deploy-config-changes.yml"
+    # openstack-ansible openstack.osa.upgrade.deploy_config_changes
+
+
+Rename group name definitions
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In OpenStack-Ansible 2026.1 (Gazpacho), the group_name definitions has been
+renamed to replace dashes (``-``) with underscores (``_``) in order to align
+with Ansible's naming convention for group_names.
+
+Despite a series of changes were made to ``openstack-ansible-inventory`` to
+support backwards compatibility, it is highly recommended to ensure your
+definitions in `openstack_user_config.yml` and `conf.d` files do not contain
+underscores.
+
+Currently, `ANSIBLE_TRANSFORM_INVALID_GROUP_CHARS <https://docs.ansible.com/projects/ansible/latest/reference_appendices/config.html#transform-invalid-group-chars>`_
+value is set to ``always``, which will instruct Ansible to automatically
+transform the group names and issue a warning on a startup.
+In case you need to preserve prior behavior, consider adding ``ANSIBLE_TRANSFORM_INVALID_GROUP_CHARS=ignore``
+to the `/etc/openstack_deploy/user.rc` file.
+
+Magnum deployment with CAPI driver
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Prior to the 2026.1 (Gazpacho) release, OpenStack-Ansible was offering
+Magnum Cluster API driver deployment, through series of manual steps
+described in OPS repository.
+For 2026.1 (Gazpacho) release Magnum Cluster API deployment has been
+integrated with the os_magnum roles and many of previously manually
+applied overrides are no longer needed.
+
+Please, refer to the `Magnum CAPI migration documentaion <https://docs.openstack.org/openstack-ansible-ops/latest/mcapi.html>`_
+for more details regarding the upgrade process.
 
 Upgrade hosts
 ~~~~~~~~~~~~~
 
 Before installing the infrastructure and OpenStack, update the host machines.
 
+.. warning::
+
+    Usage of non-trusted certificates for RabbitMQ is not possible
+    due to requirements of newer ``amqp`` versions.
+
+After that you can proceed with standard OpenStack upgrade steps:
+
 .. code-block:: console
 
-    # openstack-ansible setup-hosts.yml --limit '!galera_all:!rabbitmq_all'
+    # openstack-ansible openstack.osa.setup_hosts --limit '!galera_all:!rabbitmq_all' -e package_state=latest
 
 This command is the same setting up hosts on a new installation. The
 ``galera_all`` and ``rabbitmq_all`` host groups are excluded to prevent
 reconfiguration and restarting of any of those containers as they need to
-be updated, but not restarted.
+be updated, but not restarted. The ``-e package_state=latest`` flag tells
+the roles to upgrade only the distribution packages they explicitly
+manage to the newest available versions — this is not equivalent to a
+full ``apt upgrade`` or ``dnf upgrade`` of the host or container.
 
 Once that is complete, upgrade the final host groups with the flag to prevent
 container restarts.
 
 .. code-block:: console
 
-    # openstack-ansible setup-hosts.yml -e 'lxc_container_allow_restarts=false' --limit 'galera_all:rabbitmq_all'
+    # openstack-ansible openstack.osa.setup_hosts -e 'lxc_container_allow_restarts=false' --limit 'galera_all:rabbitmq_all'
 
 Upgrade infrastructure
 ~~~~~~~~~~~~~~~~~~~~~~
 
 We can now go ahead with the upgrade of all the infrastructure components. To
-ensure that rabbitmq and mariadb are upgraded, we pass the appropriate flags.
+ensure that RabbitMQ and MariaDB are upgraded, we pass the appropriate flags.
+
+.. warning::
+
+    Please make sure you are running RabbitMQ version 3.13 or later before
+    proceeding to this step.
+    Upgrade of RabbitMQ to version 4.0 (default for 2024.2) from prior version
+    will result in playbook failure.
+
+    At this point you can minorly upgrade RabbitMQ with the following command:
+
+    ``openstack-ansible openstack.osa.rabbitmq_server -e rabbitmq_upgrade=true -e rabbitmq_package_version=3.13.7-1``
+
+    Also ensure that you have migrated from mirrored queues (HA queues) to
+    Quorum queues before the upgrade, as mirrored queues are no longer supported
+    after upgrade.
 
 .. code-block:: console
 
-    # openstack-ansible setup-infrastructure.yml -e 'galera_upgrade=true' -e 'rabbitmq_upgrade=true'
+    # openstack-ansible openstack.osa.setup_infrastructure -e 'galera_upgrade=true' -e 'rabbitmq_upgrade=true' -e package_state=latest
 
-With this complete, we can now restart the mariadb containers one at a time,
+With this complete, we can now restart the MariaDB containers one at a time,
 ensuring that each is started, responding, and synchronized with the other
 nodes in the cluster before moving on to the next steps. This step allows
 the LXC container configuration that you applied earlier to take effect,
@@ -190,7 +240,7 @@ ensuring that the containers are restarted in a controlled fashion.
 
 .. code-block:: console
 
-    # openstack-ansible "${SCRIPTS_PATH}/upgrade-utilities/galera-cluster-rolling-restart.yml"
+    # openstack-ansible openstack.osa.tools.galera_cluster_rolling_restart
 
 Upgrade OpenStack
 ~~~~~~~~~~~~~~~~~
@@ -199,4 +249,39 @@ We can now go ahead with the upgrade of all the OpenStack components.
 
 .. code-block:: console
 
-    # openstack-ansible setup-openstack.yml
+    # openstack-ansible openstack.osa.setup_openstack -e package_state=latest
+
+Upgrade Ceph
+~~~~~~~~~~~~
+
+With each OpenStack-Ansible version we define default Ceph client version
+that will be installed on Glance/Cinder/Nova hosts and used by these services.
+If you want to preserve the previous version of the Ceph client during an
+OpenStack-Ansible upgrade, you will need to override a variable
+``ceph_stable_release`` in your user_variables.yml
+
+If Ceph has been deployed as part of an OpenStack-Ansible deployment
+using the roles maintained by the `Ceph-Ansible`_ project you will also need
+to upgrade the Ceph version. Each OpenStack-Ansible release is tested only with
+specific Ceph-Ansible release and Ceph upgrades are not checked in any
+OpenStack-Ansible integration tests. So we do not test or guarantee an
+upgrade path for such deployments. In this case tests should be done in a
+lab environment before upgrading.
+
+.. warning::
+
+    Ceph related playbooks are included as part of ``openstack.osa.setup_infrastructure``
+    and ``openstack.osa.setup_openstack`` playbooks, so you should be cautious when
+    running them during OpenStack upgrades.
+    If you have ``upgrade_ceph_packages: true`` in your user variables or
+    provided ``-e upgrade_ceph_packages=true`` as argument and run
+    ``setup-infrastructure.yml`` this will result in Ceph package being upgraded
+    as well.
+
+In order to upgrade Ceph in the deployment you will need to run:
+
+.. code-block:: console
+
+     # openstack-ansible /etc/ansible/roles/ceph-ansible/infrastructure-playbooks/rolling_update.yml
+
+.. _Ceph-Ansible: https://github.com/ceph/ceph-ansible/

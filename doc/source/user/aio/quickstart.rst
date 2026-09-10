@@ -27,7 +27,7 @@ Recommended server resources:
 * 80GB free disk space on the root partition, or 60GB+ on a blank
   secondary disk. Using a secondary disk requires the use of the
   ``bootstrap_host_data_disk_device`` parameter. Please see
-  `Building an AIO`_ for more details.
+  :ref:`building-an-aio` for more details.
 * 16GB RAM
 
 It is `possible` to perform AIO builds within a virtual machine for
@@ -37,6 +37,7 @@ nodes for specific roles are recommended.
 
 .. _hardware-assisted virtualization: https://en.wikipedia.org/wiki/Hardware-assisted_virtualization
 
+.. _building-an-aio:
 
 Building an AIO
 ---------------
@@ -62,37 +63,32 @@ system packages are upgraded and then reboot into the new kernel:
 
 .. code-block:: shell-session
 
-   ## Ubuntu
+   ## Ubuntu / Debian
    # apt-get update
    # apt-get dist-upgrade
    # reboot
 
 .. code-block:: shell-session
 
-   ## CentOS
-   # yum upgrade
-   # yum install git
+   ## CentOS Stream / Rocky Linux / AlmaLinux
+   # dnf upgrade
+   # dnf install git-core
+   # systemctl stop firewalld
+   # systemctl mask firewalld
    # reboot
 
 .. note::
 
    Before rebooting, in ``/etc/sysconfig/selinux``, make sure that
-   ``SELINUX=enforcing``is changed to ``SELINUX=disabled``.
+   ``SELINUX=enforcing`` is changed to ``SELINUX=disabled``.
    SELinux enabled is not currently supported in OpenStack-Ansible
-   for CentOS/RHEL due to a lack of maintainers for the feature.
-
-.. code-block:: shell-session
-
-   ## openSUSE
-   # zypper up
-   # zypper in git-core
-   # reboot
+   for CentOS Stream, Rocky Linux or AlmaLinux due to a lack of
+   maintainers for the feature.
 
 .. note::
 
-   If you are installing with limited connectivity, please review
-   the *Installing with limited connectivity* appendix in the
-   :deploy_guide:`Deployment Guide <index.html>` before proceeding.
+   If you are installing with limited connectivity, please review :ref:`Installing
+   with limited connectivity <limited-connectivity>` before proceeding.
 
 Bootstrap Ansible and the required roles
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -126,8 +122,10 @@ version.
 
 .. note::
    The |current_release_formal_name| release is only compatible with
-   Debian 9 (stretch), Debian 10 (buster), Ubuntu 18.04 (Bionic Beaver),
-   CentOS 7 and openSUSE Leap 15.X.
+   Debian 13 (trixie),
+   Ubuntu 24.04 (Noble Numbat), Ubuntu 26.04 (Resolute Raccoon),
+   CentOS 10 Stream and derivatives of RHEL 10 such as Rocky Linux
+   or AlmaLinux.
 
 The next step is to bootstrap Ansible and the Ansible roles for the
 development environment.
@@ -197,6 +195,13 @@ a space between each set of options, for example:
    # export BOOTSTRAP_OPTS="bootstrap_host_data_disk_device=sdb"
    # export BOOTSTRAP_OPTS="${BOOTSTRAP_OPTS} bootstrap_host_data_disk_fs_type=xfs"
 
+If you are installing with limited connectivity, or you don't have default
+route set, you will need to define interface for outgoing connections manually
+
+.. code-block:: shell-session
+
+   # export BOOTSTRAP_OPTS="bootstrap_host_public_interface=eth1"
+
 For the default AIO scenario, the AIO configuration preparation is completed by
 executing:
 
@@ -220,7 +225,7 @@ It is possible to also do this (and change other defaults) during the bootstrap
 script initial execution by changing the SCENARIO environment variable before
 running the script. The key word 'aio' will ensure that a basic set of
 OpenStack services (cinder, glance, horizon, neutron, nova) will be deployed.
-The key words 'lxc' and 'nspawn' can be used to set the container back-end,
+The key words 'lxc' can be used to set the container back-end,
 while the key word 'metal' will deploy all services without containers. In
 order to implement any other services, add the name of the conf.d file name
 without the `.yml.aio` extension into the SCENARIO environment variable. Each
@@ -231,13 +236,8 @@ container back-end.
 
 .. code-block:: shell-session
 
-   # export SCENARIO='aio_lxc_barbican_ceph'
+   # export SCENARIO='aio_lxc_barbican_ceph_ovs'
    # scripts/bootstrap-aio.sh
-
-.. note::
-   If the 'metal' and 'aio' key words are used together, horizon will not be
-   deployed because haproxy and horizon will conflict on the same listening
-   ports.
 
 To add any global overrides, over and above the defaults for the applicable
 scenario, edit ``/etc/openstack_deploy/user_variables.yml``. In order to
@@ -255,10 +255,9 @@ Finally, run the playbooks by executing:
 
 .. code-block:: shell-session
 
-   # cd /opt/openstack-ansible/playbooks
-   # openstack-ansible setup-hosts.yml
-   # openstack-ansible setup-infrastructure.yml
-   # openstack-ansible setup-openstack.yml
+   # openstack-ansible openstack.osa.setup_hosts
+   # openstack-ansible openstack.osa.setup_infrastructure
+   # openstack-ansible openstack.osa.setup_openstack
 
 The installation process will take a while to complete, but here are some
 general estimates:
@@ -277,6 +276,198 @@ Keystone service, execute:
    # cd /opt/openstack-ansible/playbooks
    # openstack-ansible os-keystone-install.yml
 
+Interacting with an AIO
+-----------------------
+
+Once an AIO has been deployed, you most likely want to interact with it. You
+can do this via the web interface or one of the many clients or libraries that
+exist for OpenStack.
+
+Using a GUI
+~~~~~~~~~~~
+
+The Horizon web interface provides a graphical interface for interacting with
+the AIO deployment. By default, the Horizon API is available on port 443 of the
+host (or port 80, if SSL certificate configuration was disabled). As such, to
+interact with Horizon, simply browse to the IP of the host.
+
+.. note::
+
+   If the AIO was deployed in a cloud VM, you may need to configure security
+   groups or firewall rules to allow access to the HTTP(S) ports. For example,
+   if the AIO was deployed in an OpenStack VM, you can create and apply a
+   suitable security group for interacting with Horizon like so:
+
+   .. code-block:: shell-session
+
+      $ openstack security group create http \
+          --description 'Allow HTTP and HTTPS access'
+      $ openstack security group rule create http \
+          --protocol tcp --dst-port 80 --remote-ip 0.0.0.0/0
+      $ openstack security group rule create http \
+          --protocol tcp --dst-port 443 --remote-ip 0.0.0.0/0
+      $ openstack server add security group $SERVER http
+
+   A list of service ports can be found in the `OpenStack Install Guide`__.
+
+   .. __: https://docs.openstack.org/install-guide/firewalls-default-ports.html
+
+This will present a login page. By default, OpenStack-Ansible create a user
+called ``admin``. The password will be the value of the
+``keystone_auth_admin_password`` variable. If you did not configure this
+variable, OpenStack-Ansible auto-generates one. You can view the configured
+password in the ``/etc/openstack_deploy/user_secrets.yml`` file.
+
+.. code-block:: shell-session
+
+   # grep admin_pass /etc/openstack_deploy/user_secrets.yml
+   heat_stack_domain_admin_password: <redacted>
+   keystone_auth_admin_password: <redacted>
+   radosgw_admin_password: <redacted>
+
+Using this username and password combination, log in to Horizon.
+
+Using a client or library
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+There are a variety of clients and libraries available for interacting with an
+OpenStack deployment, including as `openstackclient`__, `openstacksdk`__, or
+`gophercloud`__. These are typically configured using either environment
+variables sourced from an ``openrc`` file or the newer ``clouds.yaml`` file.
+
+.. __: https://opendev.org/openstack/python-openstackclient
+.. __: https://opendev.org/openstack/openstacksdk
+.. __: https://github.com/gophercloud/gophercloud
+
+OpenStack-Ansible provides the ``openstack_openrc`` role for creating these
+configuration files as well as a number of utilities such as *openstackclient*.
+If the AIO deployment using the ``lxc`` scenario (the default), these will be
+availably in the utility container.
+
+.. code-block:: shell-session
+
+   $ lxc-attach -n `lxc-ls -1 | grep utility`
+
+   # ls /root/openrc
+   /root/openrc
+
+   # ls /root/.config/openstack/clouds.yaml
+   /root/.config/openstack/clouds.yaml
+
+   # export OS_CLOUD=default
+   # openstack project list -c Name -f value
+   service
+   admin
+
+Alternatively, if the AIO was deployed using the ``metal`` scenario, these
+files will be available on the host itself.
+
+.. code-block:: shell-session
+
+   # ls /root/openrc
+   /root/openrc
+
+   # ls /root/.config/openstack/clouds.yaml
+   /root/.config/openstack/clouds.yaml
+
+If you wish to access the AIO deployment from another host - perhaps your local
+workstation - you will need either an ``openrc`` file or ``clouds.yaml`` file.
+You can download an ``openrc`` file from Horizon: simply click the User
+dropdown in the top-right corner and select ``OpenStack RC File``.
+
+.. important::
+
+   You may be tempted to copy the ``openrc`` or ``clouds.yaml`` files created
+   by the ``openstack_openrc`` role. However, these files use the ``internal``
+   `interface`__ by default. This interface use the management network
+   (``172.29.236.0/22``) , which is not routable from outside the host. If you
+   wish to use these files, you will need to change the interface to
+   ``public``.
+
+   .. __: https://docs.openstack.org/keystone/latest/contributor/service-catalog.html#endpoints
+
+.. note::
+
+   If the AIO was deployed in a cloud VM, you may need to configure security
+   groups or firewall rules to allow access to the various sevice ports. For
+   example, if the AIO was deployed in an OpenStack VM, you can create and
+   apply a suitable security group for interacting the core services like so:
+
+   .. code-block:: shell-session
+
+      $ openstack security group create openstack-apis \
+          --description 'Allow access to various OpenStack services'
+      $ for port in 8774 8776 9292 9696 5000 8780; do
+          openstack security group rule create openstack-apis \
+            --protocol tcp --dst-port ${port}:${port} --remote-ip 0.0.0.0/0
+        done
+      $ openstack server add security group $SERVER openstack-apis
+
+   A list of service ports can be found in the `OpenStack Install Guide`__.
+
+   .. __: https://docs.openstack.org/install-guide/firewalls-default-ports.html
+
+.. note::
+
+   If you have enabled SSL certificate configuration (default), all services
+   will use self-signed certificates. While the host is configured to trust
+   these certificates, this is not the case for other hosts. This will result
+   in HTTPS errors when attempting to interact with the cloud. To resolve this
+   issue, you will need to manually configure certificates on other hosts or
+   ignore SSL issues. To use the self-signed certificate, first copy it to the
+   other hosts. The name and location of the generated certificate are
+   configured by the ``pki_authorities`` and ``pki_trust_store_location``
+   variables respectively, which are used by the ``pki`` role provided by
+   `ansible-role-pki`__. On an Ubuntu host, these will default to
+   ``ExampleCorpRoot`` and ``/usr/local/share/ca-certificates``, respectively.
+   For example:
+
+   .. code-block:: shell-session
+
+      $ scp aio:/usr/local/share/ca-certificates/ExampleCorpRoot.crt ~/.config/openstack/aio.crt
+
+   .. __: https://opendev.org/openstack/ansible-role-pki
+
+   Once this is done, configure the ``cacert`` value in the the definition for
+   your cloud in ``clouds.yaml``. For example:
+
+   .. code-block:: yaml
+
+      clouds:
+        aio:
+          # ...
+          cacert: /home/<username>/.config/openstack/aio.crt
+
+   Alternatively, you can simply ignore SSL issues by setting ``verify: false``
+   in the definition for your cloud in ``clouds.yaml``. This will disable SSL
+   verification entirely for this cloud. For example:
+
+   .. code-block:: yaml
+
+      clouds:
+        aio:
+          # ...
+          verify: false
+
+   Finally, you can also opt to disable SSL certificate configuration during
+   initial deployment or opt to use an external certificate authority for
+   signing, such as Let's Encrypt. Both topics are outside the scope of this
+   document.
+
+   More information about SSL certificate configuration can be found in the
+   :ref:`securing-services-with-ssl-certificates`.
+
+Once one of these files have been created, you can use it to interact with your
+deployment using most standard clients and libraries. For example, to list
+available projects using *openstackclient*:
+
+.. code-block:: shell-session
+
+   $ export OS_CLOUD=aio
+   $ openstack project list -c Name -f value
+   service
+   admin
+
 Rebooting an AIO
 ----------------
 
@@ -291,9 +482,8 @@ This is done by executing the following:
    # openstack-ansible -e galera_ignore_cluster_state=true galera-install.yml
 
 If this fails to get the database cluster back into a running state, then
-please make use of the
-`Galera Cluster Recovery </admin/maintenance-tasks.html#galera-cluster-recovery>`
-section in the operations guide.
+please make use of the :ref:`galera-cluster-recovery`
+section in the :ref:`operations-guide`.
 
 Rebuilding an AIO
 -----------------
@@ -393,4 +583,4 @@ built for informational purposes only and should **ONLY** be used as such.
       | |          -------------------------|     | |            |      |
       | |          |                              | |            |      |
       | |          V                              | |            *      |
-      ---->[ Compute ]*[ Neutron linuxbridge ]<---| |->[ Swift storage ]-
+      ---->[ Compute ]*[ Neutron OpenvSwitch ]<---| |->[ Swift storage ]-

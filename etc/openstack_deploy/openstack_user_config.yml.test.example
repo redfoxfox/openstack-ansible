@@ -1,6 +1,6 @@
 ---
 cidr_networks:
-  container: 172.29.236.0/22
+  management: 172.29.236.0/22
   tunnel: 172.29.240.0/22
   storage: 172.29.244.0/22
 
@@ -21,12 +21,12 @@ global_overrides:
         container_bridge: "br-mgmt"
         container_type: "veth"
         container_interface: "eth1"
-        ip_from_q: "container"
+        ip_from_q: "management"
         type: "raw"
         group_binds:
           - all_containers
           - hosts
-        is_container_address: true
+        is_management_address: true
     - network:
         container_bridge: "br-vxlan"
         container_type: "veth"
@@ -36,25 +36,25 @@ global_overrides:
         range: "1:1000"
         net_name: "vxlan"
         group_binds:
-          - neutron_linuxbridge_agent
+          - neutron_openvswitch_agent
     - network:
         container_bridge: "br-vlan"
         container_type: "veth"
         container_interface: "eth12"
         host_bind_override: "eth12"
         type: "flat"
-        net_name: "flat"
+        net_name: "physnet1"
         group_binds:
-          - neutron_linuxbridge_agent
+          - neutron_openvswitch_agent
     - network:
         container_bridge: "br-vlan"
         container_type: "veth"
         container_interface: "eth11"
         type: "vlan"
         range: "101:200,301:400"
-        net_name: "vlan"
+        net_name: "physnet2"
         group_binds:
-          - neutron_linuxbridge_agent
+          - neutron_openvswitch_agent
     - network:
         container_bridge: "br-storage"
         container_type: "veth"
@@ -72,17 +72,17 @@ global_overrides:
 ###
 
 # galera, memcache, rabbitmq, utility
-shared-infra_hosts:
+shared_infra_hosts:
   infra1:
     ip: 172.29.236.11
 
 # repository (apt cache, python packages, etc)
-repo-infra_hosts:
+repo_infra_hosts:
   infra1:
     ip: 172.29.236.11
 
 # load balancer
-haproxy_hosts:
+load_balancer_hosts:
   infra1:
     ip: 172.29.236.11
 
@@ -96,7 +96,7 @@ identity_hosts:
     ip: 172.29.236.11
 
 # cinder api services
-storage-infra_hosts:
+storage_infra_hosts:
   infra1:
     ip: 172.29.236.11
 
@@ -106,12 +106,12 @@ image_hosts:
     ip: 172.29.236.11
 
 # placement
-placement-infra_hosts:
+placement_infra_hosts:
   infra1:
     ip: 172.29.236.11
 
 # nova api, conductor, etc services
-compute-infra_hosts:
+compute_infra_hosts:
   infra1:
     ip: 172.29.236.11
 

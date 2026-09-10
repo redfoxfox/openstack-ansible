@@ -10,7 +10,7 @@ the Ceph backend for images, volumes, and instances.
 
 This example environment has the following characteristics:
 
-* Three infrastructure (control plane) hosts with ceph-mon containers
+* Three infrastructure (control plane) hosts with ``ceph_mon`` containers
 * Two compute hosts
 * Three Ceph OSD storage hosts
 * One log aggregation host
@@ -29,17 +29,61 @@ Integration with Ceph
 ~~~~~~~~~~~~~~~~~~~~~
 
 OpenStack-Ansible allows `Ceph storage <https://ceph.io>`_ cluster
-integration in two ways:
+integration in three ways:
 
-* connecting to your own ceph cluster by pointing to its information
-  in ``user_variables.yml``
-* deploying a ceph cluster by using the roles maintained by the
-  `Ceph-Ansible`_ project. Deployers can enable the ``ceph-install``
-  playbook by adding hosts to the ``ceph-mon_hosts``, ``ceph-osd_hosts`` and
-  ``ceph-rgw_hosts`` groups in ``openstack_user_config.yml``, and then
-  configuring `Ceph-Ansible specific vars
+* connecting to your own pre-deployed ceph cluster by pointing to its
+  information in ``user_variables.yml`` and allowing OpenStack-Ansible
+  to ssh to the ceph monitors to retrieve the contents of ceph.conf
+  and the keyrings.
+
+  This method only requires a very small amount of configuration
+  in ``user_variables.yml`` to point to the external ceph cluster monitors.
+  The whole configuration for ceph-ansible would live outside the
+  OpenStack-Ansible deployment and there is no duplication.
+  The ``ceph_mons`` variable expects a list of IP addresses for the
+  Ceph Monitor servers in the external ceph deployment:
+
+.. note::
+
+  Overriding ceph_mons is required only when you are using external
+  cluster which does not present in the OpenStack-Ansible's inventory
+  (ie group ``mon_group_name`` is not defined).
+
+.. code-block:: yaml
+
+  ceph_mons:
+      - 172.29.244.151
+      - 172.29.244.152
+      - 172.29.244.153
+
+* connecting to your own pre-deployed ceph cluster by pointing to its
+  monitors in ``user_variables.yml`` as above and providing data to
+  populate ceph.conf and ceph keyring files on the deploy host.
+  This is described `here <https://docs.openstack.org/openstack-ansible-ceph_client/latest/config-from-file.html>`_.
+  No ssh access by OpenStack-Ansible is required to the ceph cluster.
+* deploying a ceph cluster as part of the OpenStack-Ansible deployment
+  by using the roles maintained by the `Ceph-Ansible`_ project. Deployers
+  can enable the ``openstack.osa.ceph_install`` playbook by adding hosts to
+  the ``ceph_mon_hosts`` and ``ceph_osd_hosts`` groups in
+  ``openstack_user_config.yml``. In order to enable
+  ``openstack.osa.ceph_rgw_install`` playbook you need to add
+  ``ceph_rgw_hosts`` in ``openstack_user_config.yml``.
+
+.. note::
+
+  Please mention, that RGW installation should be performed after deployment of
+  Keystone service.
+
+  Once groups are defined, you can proceed with configuring `Ceph-Ansible specific vars
   <https://github.com/ceph/ceph-ansible/blob/master/group_vars/all.yml.sample>`_
   in the OpenStack-Ansible ``user_variables.yml`` file.
+
+.. warning::
+
+  Deploying ceph cluster as part of OpenStack-Ansible is not recommended since
+  ceph-ansible upgrade path is not tested or supported. This option is mainly
+  used for CI and AIO deployments to test and demonstrate a sample integration
+  of the software stack.
 
 .. _Ceph-Ansible: https://github.com/ceph/ceph-ansible/
 
@@ -71,7 +115,7 @@ The following host name and IP address assignments are used for this
 environment.
 
 +------------------+----------------+-------------------+----------------+
-| Host name        | Management IP  | Tunnel (VxLAN) IP | Storage IP     |
+| Host name        | Management IP  | Tunnel (VXLAN) IP | Storage IP     |
 +==================+================+===================+================+
 | lb_vip_address   | 172.29.236.9   |                   |                |
 +------------------+----------------+-------------------+----------------+
@@ -144,9 +188,9 @@ The ``/etc/openstack_deploy/user_variables.yml`` file defines the global
 overrides for the default variables.
 
 For this example environment, we configure a HA load balancer.
-We implement the load balancer (HAProxy) with an HA layer (keepalived)
+We implement the load balancer (HAProxy) with an HA layer (Keepalived)
 on the infrastructure hosts.
 Your ``/etc/openstack_deploy/user_variables.yml`` must have the
-following content to configure haproxy, keepalived and ceph:
+following content to configure HAProxy, Keepalived and Ceph:
 
 .. literalinclude:: ../../../../etc/openstack_deploy/user_variables.yml.prod-ceph.example

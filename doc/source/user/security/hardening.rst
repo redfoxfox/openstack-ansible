@@ -18,12 +18,63 @@ audit an environment by using a playbook supplied with OpenStack-Ansible:
 .. code-block:: bash
 
     # Apply security hardening configurations
-      openstack-ansible security-hardening.yml
+      openstack-ansible openstack.osa.security_hardening
 
     # Perform a quick audit by using Ansible's check mode
-      openstack-ansible --check security-hardening.yml
+      openstack-ansible --check openstack.osa.security_hardening
 
 For more information about the security configurations, see the
 `security hardening role`_ documentation.
 
-.. _security hardening role: https://docs.openstack.org/ansible-hardening/
+.. _security hardening role: https://docs.openstack.org/ansible-hardening/latest/
+
+Deployment Host Hardening
+-------------------------
+
+You can extend security hardening to the deployment host by defining the
+``security_host_group`` variable in your ``openstack_user_variables`` file.
+Include ``localhost`` along with your other hosts, like this:
+
+.. code-block:: yaml
+
+   security_host_group: localhost, hosts
+
+Then apply the hardening with:
+
+.. code-block:: shell-session
+
+   openstack-ansible openstack.osa.security_hardening
+
+Or alternatively, you can also supply this variable as extra variable
+during runtime, for example:
+
+.. code-block:: shell-session
+
+   openstack-ansible openstack.osa.security_hardening -e security_host_group=localhost
+
+.. warning::
+
+   After applying security hardening, root login via password will be
+   disabled. Make sure you configure SSH key authentication or set up
+   a non-root user with sudo privileges before applying the changes,
+   otherwise you may lose access to the host.
+
+Including the deployment host can be useful to reduce its attack surface
+and ensure that the host running OpenStack-Ansible follows the same security
+best practices as your other nodes.
+
+Hiding Secrets in OpenStack-Ansible
+-----------------------------------
+
+OpenStack-Ansible roles use variables like ``_oslodb_setup_nolog``,
+``_service_setup_nolog``, and ``_oslomsg_nolog`` to control whether
+task output is hidden in logs.
+
+By default, this prevents sensitive values (such as passwords) from being
+written to log files. Disabling these variables can make debugging easier,
+but it also risks exposing secrets in plain text.
+
+.. warning::
+
+   Use them with caution: keep logging enabled for troubleshooting, but remember
+   that passwords may appear in the logs if protection is turned off.

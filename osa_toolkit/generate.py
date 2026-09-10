@@ -15,16 +15,23 @@
 #
 # (c) 2014, Kevin Carter <kevin.carter@rackspace.com>
 
+import argparse
 import copy
 import json
 import logging
-import netaddr
-from osa_toolkit import dictutils as du
-from osa_toolkit import filesystem as filesys
-from osa_toolkit import ip
+from os import getenv as os_env
+from os import path as os_path
+import re
+import sys
 import uuid
 import warnings
 
+import netaddr
+
+from osa_toolkit import __path__ as repo_path
+from osa_toolkit import dictutils as du
+from osa_toolkit import filesystem as filesys
+from osa_toolkit import ip
 
 logger = logging.getLogger('osa-inventory')
 
@@ -41,12 +48,60 @@ REQUIRED_HOSTVARS = [
     'properties',
     'ansible_host',
     'physical_host_group',
-    'container_address',
+    'management_address',
     'container_name',
     'container_networks',
     'physical_host',
+    'physical_host_addr',
     'component'
 ]
+
+
+def args(argv):
+    """Setup argument Parsing."""
+    parser = argparse.ArgumentParser(
+        usage='%(prog)s',
+        description='OpenStack Inventory Generator',
+        epilog='Inventory Generator Licensed "Apache 2.0"')
+
+    parser.add_argument(
+        '--config',
+        help='Path containing the user defined configuration files',
+        required=False,
+        default=os_env('OSA_CONFIG_DIR', None)
+    )
+
+    parser.add_argument(
+        '--list',
+        help='List all entries',
+        action='store_true'
+    )
+
+    parser.add_argument(
+        '--check',
+        help="Configuration check only, don't generate inventory",
+        action='store_true',
+    )
+
+    parser.add_argument(
+        '-d',
+        '--debug',
+        help=('Output debug messages to log file. '
+              'File is appended to, not overwritten'),
+        action='store_true',
+        default=False,
+    )
+
+    parser.add_argument(
+        '-e',
+        '--environment',
+        help=('Directory that contains the base env.d directory.\n'
+              'Defaults to <OSA_ROOT>/inventory/.'),
+        required=False,
+        default=f'{os_path.dirname(repo_path[0])}/inventory',
+    )
+
+    return vars(parser.parse_args(argv))
 
 
 class MultipleHostsWithOneIPError(Exception):
@@ -73,7 +128,7 @@ class ProviderNetworkMisconfiguration(Exception):
         self.queue_name = queue_name
 
         error_msg = ("Provider network with queue '{queue}' "
-                     "requires 'is_container_address' "
+                     "requires 'is_management_address' "
                      "to be set to True.")
 
         self.message = error_msg.format(queue=self.queue_name)
@@ -115,7 +170,7 @@ class MissingStaticRouteInfo(Exception):
 
 class LxcHostsDefined(Exception):
     def __init__(self):
-        self.message = ("The group 'lxc_hosts' or 'nspawn_hosts' must not"
+        self.message = ("The group 'lxc_hosts' must not"
                         " be defined in config; it will be dynamically "
                         " generated.")
 
@@ -125,6 +180,71 @@ class LxcHostsDefined(Exception):
 
 class GroupConflict(Exception):
     pass
+
+
+def _check_ip_conflict_on_merge(existing_group, new_group):
+    """Check for IP conflicts when merging two host groups.
+
+    :param existing_group: ``dict`` The group already in the config.
+    :param new_group: ``dict`` The group to be merged.
+    :raises: MultipleIpForHostError
+    """
+    for hostname, entries in new_group.items():
+        if hostname in existing_group:
+            existing_ip = existing_group[hostname].get('ip')
+            new_ip = entries.get('ip')
+            if existing_ip and new_ip and existing_ip != new_ip:
+                raise MultipleIpForHostError(hostname, existing_ip, new_ip)
+
+
+def _normalize_user_config(raw_config):
+    """Normalize group names in user config and merge dashed/underscored names
+
+    This function iterates through the raw configuration, normalizes group
+    names by replacing dashes with underscores, and merges groups that become
+    duplicates after normalization.
+
+    If a group with a dash and a group with an underscore (which would result
+    in the same name) are both defined as host groups (dictionaries),
+    their hosts are merged. During the merge, it checks for IP address
+    conflicts for any host defined in both groups.
+
+    For non-dictionary values, the last-seen value for a given normalized
+    key will overwrite previous ones.
+
+    :param raw_config: ``dict`` The user configuration loaded from files.
+    :returns: A ``dict`` with normalized and merged configuration.
+    :raises: MultipleIpForHostError
+    """
+    normalized_config = {}
+    for key, value in raw_config.items():
+        normalized_key = key.replace('-', '_')
+        if normalized_key in normalized_config:
+            existing_value = normalized_config[normalized_key]
+            if isinstance(existing_value, dict) and isinstance(value, dict):
+                _check_ip_conflict_on_merge(existing_value, value)
+                existing_value.update(value)
+            else:
+                normalized_config[normalized_key] = value
+        else:
+            normalized_config[normalized_key] = value
+    return normalized_config
+
+
+def _hosts_in_group(group, inventory):
+    """Generator that flattens nested inventory data.
+
+    :param group: The group name for which to find hosts for.
+    :param inventory: An dictionary representing the inventory data.
+
+    :yields: Each host found in the inventory structure within the group.
+    """
+    inv = inventory.get(group)
+    for host in inv.get("hosts", list()):
+        yield host
+
+    for child in inv.get("children", list()):
+        yield from _hosts_in_group(child, inventory)
 
 
 def _parse_belongs_to(key, belongs_to, inventory):
@@ -146,9 +266,8 @@ def _parse_belongs_to(key, belongs_to, inventory):
 
 
 def _build_container_hosts(container_affinity, container_hosts, type_and_name,
-                           inventory, host_type, container_type,
-                           container_host_type, physical_host_type, config,
-                           properties, assignment):
+                           inventory, host_type, container_host_type,
+                           physical_host_type, config, properties, assignment):
     """Add in all of the host associations into inventory.
 
     This will add in all of the hosts into the inventory based on the given
@@ -159,7 +278,6 @@ def _build_container_hosts(container_affinity, container_hosts, type_and_name,
     :param type_and_name: ``str`` Combined name of host and container name
     :param inventory: ``dict``  Living dictionary of inventory
     :param host_type: ``str``  Name of the host type
-    :param container_type: ``str``  Type of container
     :param container_host_type: ``str`` Type of host
     :param physical_host_type: ``str``  Name of physical host group
     :param config: ``dict``  User defined information
@@ -173,14 +291,14 @@ def _build_container_hosts(container_affinity, container_hosts, type_and_name,
 
     for make_container in range(container_affinity):
         for i in container_hosts:
-            if '{}-'.format(type_and_name) in i:
+            sub_item = re.sub(r'[_-]', '[_-]', f'{type_and_name}-')
+            if re.match(sub_item, i):
                 du.append_if(array=container_list, item=i)
 
         existing_count = len(list(set(container_list)))
 
         if existing_count < container_affinity:
             hostvars = inventory['_meta']['hostvars']
-            container_mapping = inventory[container_type]['children']
             address = None
 
             if is_metal is False:
@@ -214,15 +332,12 @@ def _build_container_hosts(container_affinity, container_hosts, type_and_name,
                 host_type_config = config[physical_host_type][host_type]
                 address = host_type_config.get('ip')
 
-            # Create a host types containers group and append it to inventory
-            host_type_containers = '{}-host_containers'.format(host_type)
-            du.append_if(array=container_mapping, item=host_type_containers)
-
             hostvars_options.update({
                 'ansible_host': address,
-                'container_address': address,
+                'management_address': address,
                 'container_name': container_host_name,
                 'physical_host': host_type,
+                'physical_host_addr': hostvars[host_type].get('ansible_host'),
                 'physical_host_group': physical_host_type,
                 'component': assignment
             })
@@ -257,7 +372,12 @@ def _append_to_host_groups(inventory, container_type, assignment, host_type,
     :param host_type: ``str``  Name of the host type
     :param type_and_name: ``str`` Combined name of host and container name
     """
-    physical_group_type = '{}_all'.format(container_type.split('_')[0])
+    physical_group_type = re.sub(
+        r"(?P<group>.*)_(?P<type>.*)$",
+        r'\g<group>_all',
+        container_type
+    )
+    physical_group_type = physical_group_type.replace('-', '_')
     if physical_group_type not in inventory:
         logger.debug("Added %s group to inventory", physical_group_type)
         inventory[physical_group_type] = {'hosts': []}
@@ -275,13 +395,14 @@ def _append_to_host_groups(inventory, container_type, assignment, host_type,
                 container = hdata['container_name'] = hname
             else:
                 container = hdata['container_name']
+            container_name = re.sub(r'_', '-', f'{container}')
 
             component = hdata.get('component')
             if container.startswith(host_type):
                 if 'physical_host' not in hdata:
                     hdata['physical_host'] = host_type
 
-                if container.startswith('{}-'.format(type_and_name)):
+                if container_name.startswith('{}-'.format(type_and_name)):
                     appended = du.append_if(array=iah, item=container)
                     if appended:
                         logger.debug("Added host %s to %s hosts",
@@ -292,7 +413,7 @@ def _append_to_host_groups(inventory, container_type, assignment, host_type,
                         if appended:
                             logger.debug("Added is_metal host %s to %s hosts",
                                          container, assignment)
-                if container.startswith('{}-'.format(type_and_name)):
+                if container_name.startswith('{}-'.format(type_and_name)):
                     appended = du.append_if(array=iph, item=container)
                     if appended:
                         logger.debug("Added host %s to %s hosts",
@@ -329,24 +450,31 @@ def _append_to_host_groups(inventory, container_type, assignment, host_type,
                             hdata[_keys] = options
 
 
-def _add_container_hosts(assignment, config, container_name, container_type,
+def _add_container_hosts(assignment, config, container_group, container_type,
                          inventory, properties):
     """Add a given container name and type to the hosts.
 
     :param assignment: ``str`` Name of container component target
     :param config: ``dict``  User defined information
-    :param container_name: ``str``  Name fo container
+    :param container_group: ``str``  Name of container group. Used for
+                            defining container name
     :param container_type: ``str``  Type of container
     :param inventory: ``dict``  Living dictionary of inventory
     :param properties: ``dict``  Dict of container properties
     """
-    physical_host_type = '{}_hosts'.format(container_type.split('_')[0])
+    physical_host_type = re.sub(
+        r"(?P<group>.*)_(?P<type>.*)$",
+        r'\g<group>_hosts',
+        container_type
+    )
+    physical_host_type = physical_host_type.replace('-', '_')
+    container_name = re.sub(r'_', '-', f'{container_group}')
     # If the physical host type is not in config return
     if physical_host_type not in config:
         return
 
     for host_type in inventory[physical_host_type]['hosts']:
-        container_hosts = inventory[container_name]['hosts']
+        container_hosts = inventory[container_group]['hosts']
 
         # If host_type is not in config do not append containers to it
         if host_type not in config[physical_host_type]:
@@ -363,40 +491,51 @@ def _add_container_hosts(assignment, config, container_name, container_type,
         if no_containers:
             properties['is_metal'] = True
 
-        container_affinity = affinity.get(container_name, 1)
+        container_affinity = affinity.get(container_group, 1)
         # Ensures that container names are not longer than 63
         # This section will ensure that we are not it by the following bug:
         # https://bugzilla.mindrot.org/show_bug.cgi?id=2239
-        type_and_name = '{}_{}'.format(host_type, container_name)
+        type_and_name = '{}-{}'.format(host_type, container_name)
         logger.debug("Generated container name %s", type_and_name)
         max_hostname_len = 52
-        if len(type_and_name) > max_hostname_len:
+        is_metal = properties.get('is_metal', False)
+        if len(type_and_name) > max_hostname_len and not is_metal:
             raise SystemExit(
                 'The resulting combination of [ "{}" + "{}" ] is longer than'
-                ' 52 characters. This combination will result in a container'
+                ' {} characters. This combination will result in a container'
                 ' name that is longer than the maximum allowable hostname of'
                 ' 63 characters. Before this process can continue please'
                 ' adjust the host entries in your "openstack_user_config.yml"'
                 ' to use a short hostname. The recommended hostname length is'
-                ' < 20 characters long.'.format(host_type, container_name)
+                ' < 20 characters long.'.format(
+                    host_type, container_name, max_hostname_len
+                )
+            )
+        elif len(host_type) > 63 and is_metal:
+            raise SystemExit(
+                'The resulting hostname "{0}" is longer than 63 characters.'
+                ' This combination may result in a name that is longer than'
+                ' the maximum allowable hostname of 63 characters. Before'
+                ' this process can continue please adjust the host entries'
+                ' in your "openstack_user_config.yml" to use a short hostname'
+                '.'.format(host_type)
             )
 
         physical_host = inventory['_meta']['hostvars'][host_type]
-        container_host_type = '{}-host_containers'.format(host_type)
+        container_host_type = '{}_host_containers'.format(host_type)
         if 'container_types' not in physical_host:
             physical_host['container_types'] = container_host_type
         elif physical_host['container_types'] != container_host_type:
             physical_host['container_types'] = container_host_type
 
         # Add all of the containers into the inventory
-        logger.debug("Building containers for host %s", container_name)
+        logger.debug("Building containers for host %s", container_group)
         _build_container_hosts(
             container_affinity,
             container_hosts,
             type_and_name,
             inventory,
             host_type,
-            container_type,
             container_host_type,
             physical_host_type,
             config,
@@ -439,7 +578,8 @@ def user_defined_setup(config, inventory):
 
                 hvs[_key].update({
                     'ansible_host': _value['ip'],
-                    'container_address': _value['ip'],
+                    'management_address': _value.get(
+                        'management_ip', _value['ip']),
                     'is_metal': True,
                     'physical_host_group': key
                 })
@@ -515,7 +655,7 @@ def skel_load(skeleton, inventory):
 
 
 def network_entry(is_metal, interface,
-                  bridge=None, net_type=None, net_mtu=None):
+                  bridge=None, bridge_type=None, net_type=None, net_mtu=None):
     """Return a network entry for a container."""
 
     # TODO(cloudnull) After a few releases this conditional should be
@@ -530,6 +670,9 @@ def network_entry(is_metal, interface,
     if bridge:
         _network['bridge'] = bridge
 
+    if bridge_type:
+        _network['bridge_type'] = bridge_type
+
     if net_type:
         _network['type'] = net_type
 
@@ -540,9 +683,9 @@ def network_entry(is_metal, interface,
 
 
 def _add_additional_networks(key, inventory, ip_q, q_name, netmask, interface,
-                             bridge, net_type, net_mtu, user_config,
-                             is_container_address, static_routes, gateway,
-                             reference_group, address_prefix):
+                             bridge, bridge_type, net_type, net_mtu,
+                             user_config, is_management_address, static_routes,
+                             gateway, reference_group, address_prefix):
     """Process additional ip adds and append then to hosts as needed.
 
     If the host is found to be "is_metal" it will be marked as "on_metal"
@@ -556,7 +699,7 @@ def _add_additional_networks(key, inventory, ip_q, q_name, netmask, interface,
     :param netmask: ``str`` netmask to use.
     :param interface: ``str`` interface name to set for the network.
     :param user_config: ``dict`` user defined configuration details.
-    :param is_container_address: ``bol`` set this address to container_address.
+    :param is_management_address: ``bool`` set address as management_address.
     :param static_routes: ``list`` List containing static route dicts.
     :param gateway: ``str`` gateway address to use in container
     :param reference_group: ``str`` group to filter membership of host against.
@@ -576,10 +719,11 @@ def _add_additional_networks(key, inventory, ip_q, q_name, netmask, interface,
                 netmask,
                 interface,
                 bridge,
+                bridge_type,
                 net_type,
                 net_mtu,
                 user_config,
-                is_container_address,
+                is_management_address,
                 static_routes,
                 gateway,
                 reference_group,
@@ -607,7 +751,7 @@ def _add_additional_networks(key, inventory, ip_q, q_name, netmask, interface,
 
         physical_host = container.get('physical_host')
         if (reference_group and physical_host
-                not in inventory.get(reference_group).get('hosts')):
+                not in _hosts_in_group(reference_group, inventory)):
             continue
 
         # TODO(cloudnull) after a few releases this should be removed.
@@ -625,9 +769,10 @@ def _add_additional_networks(key, inventory, ip_q, q_name, netmask, interface,
             is_metal = properties.get('is_metal', False)
 
         _network = network_entry(
-            is_metal and (container.get('container_tech') != 'nspawn'),
+            is_metal,
             interface,
             bridge,
+            bridge_type,
             net_type,
             net_mtu
         )
@@ -648,12 +793,13 @@ def _add_additional_networks(key, inventory, ip_q, q_name, netmask, interface,
                 if address:
                     network['address'] = address
 
+            ansible_host_address = networks[old_address]['address']
             network['netmask'] = netmask
 
         elif is_metal:
             network = networks[old_address] = _network
             network['netmask'] = netmask
-            if is_container_address:
+            if is_management_address:
                 # Container physical host group
                 cphg = container.get('physical_host_group')
 
@@ -662,13 +808,17 @@ def _add_additional_networks(key, inventory, ip_q, q_name, netmask, interface,
                     phg = user_config[cphg][container_host]
                 else:
                     phg = user_config[cphg][physical_host]
-                network['address'] = phg['ip']
+                ansible_host_address = phg['ip']
+                network['address'] = phg.get(
+                    'management_ip', ansible_host_address)
+        else:
+            ansible_host_address = networks[old_address]['address']
 
-        if is_container_address is True:
-            container['ansible_host'] = networks[old_address]['address']
+        if is_management_address is True:
+            container['ansible_host'] = ansible_host_address
 
-        if is_container_address is True:
-            container['container_address'] = networks[old_address]['address']
+        if is_management_address is True:
+            container['management_address'] = networks[old_address]['address']
 
         if gateway:
             # if specified, gateway address will be used for default route in
@@ -703,66 +853,89 @@ def container_skel_load(container_skel, inventory, config):
     logger.debug("Loading container skeleton")
 
     for key, value in container_skel.items():
-        contains_in = value.get('contains', False)
-        belongs_to_in = value.get('belongs_to', False)
-        if contains_in or belongs_to_in:
-            for assignment in value['contains']:
-                for container_type in value['belongs_to']:
-                    _add_container_hosts(
-                        assignment,
-                        config,
-                        key,
-                        container_type,
-                        inventory,
-                        value.get('properties', {})
-                    )
-    else:
-        cidr_networks = config.get('cidr_networks')
-        provider_queues = {}
-        for net_name in cidr_networks:
-            ip_q = ip.load_optional_q(
-                cidr_networks, cidr_name=net_name
+        contains_in = value.get('contains', list())
+        belongs_to_in = value.get('belongs_to', list())
+        properties = value.get('properties', {})
+
+        if belongs_to_in:
+            _parse_belongs_to(
+                key,
+                belongs_to=value['belongs_to'],
+                inventory=inventory
             )
-            provider_queues[net_name] = ip_q
-            if ip_q is not None:
-                net = netaddr.IPNetwork(cidr_networks.get(net_name))
-                q_netmask = '{}_netmask'.format(net_name)
-                provider_queues[q_netmask] = str(net.netmask)
+        if properties.get('is_nest', False):
+            physical_host_type = re.sub(
+                r"(?P<group>.*)_(?P<type>.*)$",
+                r'\g<group>_hosts',
+                key
+            )
+            for host_type in inventory[physical_host_type]['hosts']:
+                container_mapping = inventory[key]['children']
+                host_type_containers = '{}_host_containers'.format(host_type)
+                if host_type_containers in inventory:
+                    du.append_if(array=container_mapping,
+                                 item=host_type_containers)
 
-        overrides = config.get('global_overrides', dict())
-        # iterate over a list of provider_networks, var=pn
-        pns = overrides.get('provider_networks', list())
-        for pn in pns:
-            # p_net are the provider_network values
-            p_net = pn.get('network')
-            if not p_net:
-                continue
-
-            q_name = p_net.get('ip_from_q')
-            ip_from_q = provider_queues.get(q_name)
-            if ip_from_q:
-                netmask = provider_queues['{}_netmask'.format(q_name)]
-            else:
-                netmask = None
-
-            for group in p_net.get('group_binds', list()):
-                _add_additional_networks(
-                    key=group,
-                    inventory=inventory,
-                    ip_q=ip_from_q,
-                    q_name=q_name,
-                    netmask=netmask,
-                    interface=p_net.get('container_interface'),
-                    bridge=p_net['container_bridge'],
-                    net_type=p_net.get('container_type'),
-                    net_mtu=p_net.get('container_mtu'),
-                    user_config=config,
-                    is_container_address=p_net.get('is_container_address'),
-                    static_routes=p_net.get('static_routes'),
-                    gateway=p_net.get('gateway'),
-                    reference_group=p_net.get('reference_group'),
-                    address_prefix=p_net.get('address_prefix')
+        for assignment in contains_in:
+            for container_type in belongs_to_in:
+                _add_container_hosts(
+                    assignment,
+                    config,
+                    key,
+                    container_type,
+                    inventory,
+                    properties
                 )
+
+    cidr_networks = config.get('cidr_networks')
+    provider_queues = {}
+    for net_name in cidr_networks:
+        ip_q = ip.load_optional_q(
+            cidr_networks, cidr_name=net_name
+        )
+        provider_queues[net_name] = ip_q
+        if ip_q is not None:
+            net = netaddr.IPNetwork(cidr_networks.get(net_name))
+            q_netmask = '{}_netmask'.format(net_name)
+            provider_queues[q_netmask] = str(net.netmask)
+
+    overrides = config.get('global_overrides', dict())
+    # iterate over a list of provider_networks, var=pn
+    pns = overrides.get('provider_networks', list())
+    for pn in pns:
+        # p_net are the provider_network values
+        p_net = pn.get('network')
+        if not p_net:
+            continue
+
+        q_name = p_net.get('ip_from_q')
+        ip_from_q = provider_queues.get(q_name)
+        if ip_from_q:
+            netmask = provider_queues['{}_netmask'.format(q_name)]
+        else:
+            netmask = None
+
+        for group in p_net.get('group_binds', list()):
+            _add_additional_networks(
+                key=group.replace('-', '_'),
+                inventory=inventory,
+                ip_q=ip_from_q,
+                q_name=q_name,
+                netmask=netmask,
+                interface=p_net.get('container_interface'),
+                bridge=p_net.get('container_bridge'),
+                bridge_type=p_net.get('container_bridge_type'),
+                net_type=p_net.get('container_type'),
+                net_mtu=p_net.get('container_mtu'),
+                user_config=config,
+                is_management_address=p_net.get(
+                    'is_management_address', p_net.get('is_container_address')
+                ),
+                static_routes=p_net.get('static_routes'),
+                gateway=p_net.get('gateway'),
+                reference_group=p_net.get('reference_group'),
+                address_prefix=p_net.get('address_prefix')
+            )
 
     populate_lxc_hosts(inventory)
 
@@ -774,10 +947,9 @@ def populate_lxc_hosts(inventory):
 
     :param inventory: The dictionary containing the Ansible inventory
     """
-    lxc_host_nodes, nspawn_host_nodes = _find_lxc_hosts(inventory)
-    inventory['nspawn_hosts'] = {'hosts': nspawn_host_nodes}
+    lxc_host_nodes = _find_lxc_hosts(inventory)
     inventory['lxc_hosts'] = {'hosts': lxc_host_nodes}
-    logger.debug("Created lxc_hosts and nspawn_hosts group.")
+    logger.debug("Created lxc_hosts group.")
 
 
 def _find_lxc_hosts(inventory):
@@ -795,7 +967,6 @@ def _find_lxc_hosts(inventory):
     :rtype: list
     """
     lxc_host_nodes = []
-    nspawn_host_nodes = []
     for host, hostvars in inventory['_meta']['hostvars'].items():
         physical_host = hostvars.get('physical_host', None)
         container_tech = hostvars.get('container_tech', 'lxc')
@@ -808,19 +979,14 @@ def _find_lxc_hosts(inventory):
                     array=lxc_host_nodes,
                     item=physical_host
                 )
-            elif container_tech == 'nspawn':
-                appended = du.append_if(
-                    array=nspawn_host_nodes,
-                    item=physical_host
-                )
             else:
                 appended = None
 
             if appended:
-                logger.debug("%s added to lxc_hosts and nspawn_hosts group",
+                logger.debug("%s added to lxc_hosts group",
                              physical_host)
 
-    return lxc_host_nodes, nspawn_host_nodes
+    return lxc_host_nodes
 
 
 def _ensure_inventory_uptodate(inventory, container_skel):
@@ -835,6 +1001,12 @@ def _ensure_inventory_uptodate(inventory, container_skel):
     for hostname, _vars in host_vars.items():
         if 'container_name' not in _vars:
             _vars['container_name'] = hostname
+
+        # Populate physical_host_addr if physical_host is known
+        physical_host = _vars.get('physical_host')
+        if physical_host and physical_host in host_vars:
+            _vars['physical_host_addr'] = host_vars[physical_host].get(
+                'ansible_host')
 
         for rh in REQUIRED_HOSTVARS:
             if rh not in _vars:
@@ -946,9 +1118,7 @@ def _check_multiple_ips_to_host(config):
 def _check_lxc_hosts(config):
     if 'lxc_hosts' in config.keys():
         raise LxcHostsDefined()
-    elif 'nspawn_hosts' in config.keys():
-        raise LxcHostsDefined()
-    logger.debug("lxc_hosts or nspawn_hosts group not defined")
+    logger.debug("lxc_hosts group not defined")
 
 
 def _check_group_branches(config, physical_skel):
@@ -1031,7 +1201,9 @@ def _check_config_settings(cidr_networks, config, container_skel):
                     )
                 if (p_net.get('container_bridge') == overrides.get(
                         'management_bridge')):
-                    if not p_net.get('is_container_address'):
+                    if not p_net.get(
+                            'is_management_address',
+                            p_net.get('is_container_address')):
                         raise ProviderNetworkMisconfiguration(q_name)
 
     logger.debug("Provider network information OK")
@@ -1072,19 +1244,6 @@ def _check_all_conf_groups_present(config, environment):
     return retval
 
 
-def _collect_hostnames(inventory):
-
-    # Generate a list of all hosts and their used IP addresses
-    hostnames_ips = {}
-    for _host, _vars in inventory['_meta']['hostvars'].items():
-        host_hash = hostnames_ips[_host] = {}
-        for _key, _value in _vars.items():
-            if _key.endswith('address') or _key == 'ansible_host':
-                host_hash[_key] = _value
-
-    return hostnames_ips
-
-
 def _prepare_debug_logger():
     log_fmt = "%(lineno)d - %(funcName)s: %(message)s"
     logging.basicConfig(format=log_fmt, filename='inventory.log')
@@ -1092,7 +1251,11 @@ def _prepare_debug_logger():
     logger.info("Beginning new inventory run")
 
 
-def main(config=None, check=False, debug=False, environment=None, **kwargs):
+def generate(config=None,
+             check=False,
+             debug=False,
+             environment=None,
+             **kwargs):
     """Run the main application.
 
     :param config: ``str`` Directory from which to pull configs and overrides
@@ -1107,10 +1270,11 @@ def main(config=None, check=False, debug=False, environment=None, **kwargs):
         _prepare_debug_logger()
 
     try:
-        user_defined_config = filesys.load_user_configuration(config)
+        raw_user_defined_config = filesys.load_user_configuration(config)
     except filesys.MissingDataSource as ex:
         raise SystemExit(ex)
 
+    user_defined_config = _normalize_user_config(raw_user_defined_config)
     base_env_dir = environment
     base_env = filesys.load_environment(base_env_dir, {})
     environment = filesys.load_environment(config, base_env)
@@ -1140,8 +1304,11 @@ def main(config=None, check=False, debug=False, environment=None, **kwargs):
                 continue
             q_name = p_net.get('ip_from_q')
             if q_name and q_name in cidr_networks:
-                if (p_net.get('address_prefix') in ('container',
-                                                    'management')):
+                addr_prefix = p_net.get('address_prefix')
+                is_mgmt = p_net.get(
+                    'is_management_address', p_net.get('is_container_address')
+                )
+                if (addr_prefix in ('container', 'management') or is_mgmt):
                     if user_cidr is None:
                         user_cidr = []
                     user_cidr.append(cidr_networks[q_name])
@@ -1203,10 +1370,6 @@ def main(config=None, check=False, debug=False, environment=None, **kwargs):
         if _check_all_conf_groups_present(user_defined_config, environment):
             return 'Configuration ok!'
 
-    # Save a list of all hosts and their given IP addresses
-    hostnames_ips = _collect_hostnames(inventory)
-    filesys.write_hostnames(config, hostnames_ips)
-
     if logger.isEnabledFor(logging.DEBUG):
         num_hosts = len(inventory['_meta']['hostvars'])
         logger.debug("%d hosts found.", num_hosts)
@@ -1217,3 +1380,10 @@ def main(config=None, check=False, debug=False, environment=None, **kwargs):
         filesys.save_inventory(inventory_json, inv_path)
 
     return inventory_json
+
+
+def main(argv=sys.argv[1:]):
+
+    all_args = args(argv)
+    data = generate(**all_args)
+    print(data)

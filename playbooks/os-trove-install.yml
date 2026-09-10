@@ -16,22 +16,5 @@
 # (c) 2016 Donovan Francesco <donovan.francesco@is.co.za>
 # (c) 2016 Paul Stevens <paul.stevens@is.co.za>
 
-- name: Install trove server
-  hosts: trove_all
-  gather_facts: "{{ osa_gather_facts | default(True) }}"
-  user: root
-  environment: "{{ deployment_environment_variables | default({}) }}"
-  vars_files:
-    - "defaults/repo_packages/openstack_services.yml"
-    - "defaults/{{ install_method }}_install.yml"
-  tags:
-    - trove
-  pre_tasks:
-    - include_tasks: "common-tasks/os-{{ container_tech | default('lxc') }}-container-setup.yml"
-      when: not is_metal
-
-    - include_tasks: common-tasks/unbound-clients.yml
-      when:
-        - hostvars['localhost']['resolvconf_enabled'] | bool
-  roles:
-    - role: "os_trove"
+- name: Importing trove playbook
+  import_playbook: openstack.osa.trove

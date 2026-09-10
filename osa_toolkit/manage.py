@@ -59,6 +59,14 @@ def args():
         default=[]
     )
     exclusive_action.add_argument(
+        '-d',
+        '--remove-group',
+        help='group name to remove from inventory, this can be used multiple'
+             ' times.',
+        action='append',
+        default=[]
+    )
+    exclusive_action.add_argument(
         '-l',
         '--list-host',
         help='',
@@ -111,10 +119,6 @@ def get_all_groups(inventory):
     """
     containers = {}
     for container_name in inventory['_meta']['hostvars'].keys():
-
-        # Skip the default group names since they're not helpful (like aio1).
-        if '_' not in container_name:
-            continue
 
         groups = get_groups_for_container(inventory, container_name)
         containers[container_name] = groups
@@ -198,8 +202,12 @@ def print_containers_per_group(inventory):
             continue
 
         # Don't show default group
-        if len(containers) == 1 and '_' not in containers[0]:
-            continue
+        if len(containers) == 1:
+            if containers[0] is None:
+                continue
+
+            if '_' not in containers[0]:
+                continue
 
         # Join with newlines here to avoid having a horrific table with tons
         # of line wrapping.
@@ -236,6 +244,9 @@ def print_inventory(inventory, sort_key):
         else:
             row = []
             for _rl in required_list:
+                if _rl == 'component':
+                    if values.get(_rl) is None:
+                        values[_rl] = "-undefined-"
                 if _rl == 'container_name':
                     if values.get(_rl) is None:
                         values[_rl] = key
@@ -294,12 +305,22 @@ def remove_ip_addresses(inventory, filepath=None):
         if variables.get('is_metal', False):
             continue
 
-        ip_vars = ['container_networks', 'container_address',
+        ip_vars = ['container_networks', 'management_address',
                    'ansible_host', 'ansible_ssh_host']
 
         # Don't raise a KeyError if the entries have already been removed.
         for ip_var in ip_vars:
             variables.pop(ip_var, None)
+
+    if filepath is not None:
+        inventory_json = json.dumps(inventory, indent=2,
+                                    separators=(',', ': '))
+        filesys.save_inventory(inventory_json, filepath)
+
+
+def remove_inventory_group(remove_group, inventory, filepath=None):
+    for group in remove_group:
+        inventory.pop(group, None)
 
     if filepath is not None:
         inventory_json = json.dumps(inventory, indent=2,
@@ -346,6 +367,9 @@ def main():
         print(json.dumps(export_host_info(inventory), indent=2))
     elif user_args['clear_ips'] is True:
         remove_ip_addresses(inventory, filepath)
+        print('Success. . .')
+    elif user_args['remove_group']:
+        remove_inventory_group(user_args['remove_group'], inventory, filepath)
         print('Success. . .')
     else:
         remove_inventory_item(user_args['remove_item'], inventory, filepath)

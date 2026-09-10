@@ -14,14 +14,14 @@ required for the OpenStack control plane to function properly.
 This does not cover any networking related to instance connectivity.
 
 These instructions assume an OpenStack-Ansible installation using LXC
-containers, VXLAN overlay, and the Linuxbridge ml2 driver.
+containers, VXLAN overlay for ML2/OVS and Geneve overlay for the ML2/OVN drivers.
 
 Network List
 ------------
 
 1. ``HOST_NET`` (Physical Host Management and Access to Internet)
-2. ``CONTAINER_NET`` (LXC container network used Openstack Services)
-3. ``OVERLAY_NET`` (VXLAN overlay network)
+2. ``MANAGEMENT_NET`` (LXC container network used OpenStack Services)
+3. ``OVERLAY_NET`` (VXLAN overlay network for OVS, Geneve overlay network for OVN)
 
 Useful network utilities and commands:
 
@@ -36,7 +36,6 @@ Useful network utilities and commands:
    # iptables -nL
    # arping [-c NUMBER] [-d] <TARGET_IP_ADDRESS>
 
-
 Troubleshooting host-to-host traffic on HOST_NET
 ------------------------------------------------
 
@@ -50,7 +49,8 @@ Perform the following checks:
   on physical switches (if applicable)
 - Check that hosts are in the same IP subnet
   or have proper routing between them
-- Check there are no iptables applied to the hosts that would deny traffic
+- Check there are no firewall (firewalld, ufw, etc.) rules applied to the hosts
+  that would deny traffic
 
 IP addresses should be applied to physical interface, bond interface,
 tagged sub-interface, or in some cases the bridge interface:
@@ -64,8 +64,8 @@ tagged sub-interface, or in some cases the bridge interface:
       valid_lft forever preferred_lft forever
    ...
 
-Troubleshooting host-to-host traffic on CONTAINER_NET
------------------------------------------------------
+Troubleshooting host-to-host traffic on MANAGEMENT_NET
+------------------------------------------------------
 
 Perform the following checks:
 
@@ -76,7 +76,8 @@ Perform the following checks:
 - Check VLAN configurations and any necessary trunking to uplink ports
   on physical switches (if applicable)
 - Check that hosts are in the same subnet or have proper routing between them
-- Check there are no iptables applied to the hosts that would deny traffic
+- Check there are no firewall (firewalld, ufw, etc.) rules applied to the hosts
+  that would deny traffic
 - Check to verify that physical interface is in the bridge
 - Check to verify that veth-pair end from container is in ``br-mgmt``
 
@@ -116,6 +117,17 @@ physical interface or tagged-subinterface:
                                                99999999_eth1
                                                ...
 
+You can also use ip command to display bridges:
+
+.. code-block:: console
+
+   # ip link show master br-mgmt
+
+   12: bond0.100@bond0: ... master br-mgmt state UP mode DEFAULT group default qlen 1000
+   ....
+   51: 11111111_eth1_eth1@if3: ... master br-mgmt state UP mode DEFAULT group default qlen 1000
+   ....
+
 Troubleshooting host-to-host traffic on OVERLAY_NET
 ---------------------------------------------------
 
@@ -128,7 +140,8 @@ Perform the following checks:
 - Check VLAN configurations and any necessary trunking to uplink ports
   on physical switches (if applicable)
 - Check that hosts are in the same subnet or have proper routing between them
-- Check there are no iptables applied to the hosts that would deny traffic
+- Check there are no firewall (firewalld, ufw, etc.) rules applied to the hosts
+  that would deny traffic
 - Check to verify that physcial interface is in the bridge
 - Check to verify that veth-pair end from container is in ``br-vxlan``
 
@@ -143,42 +156,23 @@ IP address should be applied to ``br-vxlan``:
       valid_lft forever preferred_lft forever
       ...
 
-IP address should be applied to eth10 inside the required LXC containers:
-
-.. code-block:: console
-
-   # ip address show dev eth10
-   67: eth10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 150...UP...
-   link/ether b1:b1:b1:b1:b1:02 brd ff:ff:ff:ff:ff:ff
-   inet 172.29.240.55/22 brd 172.29.243.255 scope global eth10
-      valid_lft forever preferred_lft forever
-      ...
-
-``br-vxlan`` should contain veth-pair ends from required LXC containers and
-a physical interface or tagged-subinterface:
-
-.. code-block:: console
-
-   # brctl show br-vxlan
-   bridge name     bridge id          STP enabled  interfaces
-   br-vxlan        8000.ghijkl123456  no           bond1.100
-                                                   3333333_eth10
-
 Checking services
 ~~~~~~~~~~~~~~~~~
 
 You can check the status of an OpenStack service by accessing every controller
-node and running the :command:`service <SERVICE_NAME> status`.
+node and running the :command:`systemctl status <SERVICE_NAME>`.
 
 See the following links for additional information to verify OpenStack
 services:
 
-- `Identity service (keystone) <https://ask.openstack.org/en/question/101127/how-to-check-if-keystone-is-running/>`_
-- `Image service (glance) <https://docs.openstack.org/ocata/install-guide-ubuntu/glance-verify.html>`_
-- `Compute service (nova) <https://docs.openstack.org/ocata/install-guide-ubuntu/nova-verify.html>`_
-- `Networking service (neutron) <https://docs.openstack.org/ocata/install-guide-ubuntu/neutron-verify.html>`_
-- `Block Storage service <https://docs.openstack.org/ocata/install-guide-rdo/cinder-verify.html>`_
-- `Object Storage service (swift) <https://docs.openstack.org/project-install-guide/object-storage/ocata/verify.html>`_
+- `Identity service (keystone) <https://docs.openstack.org/keystone/latest/install/keystone-verify-ubuntu.html>`_
+- `Image service (glance) <https://docs.openstack.org/glance/latest/install/verify.html>`_
+- `Compute service (nova) <https://docs.openstack.org/nova/latest/install/verify.html>`_
+- `Networking service (neutron) <https://docs.openstack.org/neutron/latest/install/verify.html>`_
+- `Block Storage service (cinder) <https://docs.openstack.org/cinder/latest/install/cinder-verify.html>`_
+- `Object Storage service (swift) <https://docs.openstack.org/swift/latest/install/verify.html>`_
+
+Some useful commands to manage LXC see :ref:`command-line-reference`.
 
 Restarting services
 ~~~~~~~~~~~~~~~~~~~
@@ -194,91 +188,108 @@ The following table lists the commands to restart an OpenStack service.
 
    * - OpenStack service
      - Commands
+
    * - Image service
      - .. code-block:: console
 
-          # service glance-registry restart
-          # service glance-api restart
+          # systemctl restart glance-api
+
    * - Compute service (controller node)
      - .. code-block:: console
 
-          # service nova-api-os-compute restart
-          # service nova-consoleauth restart
-          # service nova-scheduler restart
-          # service nova-conductor restart
-          # service nova-api-metadata restart
-          # service nova-novncproxy restart (if using novnc)
-          # service nova-spicehtml5proxy restart (if using spice)
+          # systemctl restart nova-api-os-compute
+          # systemctl restart nova-scheduler
+          # systemctl restart nova-conductor
+          # systemctl restart nova-api-metadata
+          # systemctl restart nova-novncproxy (if using noVNC)
+          # systemctl restart nova-spicehtml5proxy (if using SPICE)
+
    * - Compute service (compute node)
      - .. code-block:: console
 
-          # service nova-compute restart
-   * - Networking service
+          # systemctl restart nova-compute
+
+   * - Networking service (controller node, for OVS)
      - .. code-block:: console
 
-          # service neutron-server restart
-          # service neutron-dhcp-agent restart
-          # service neutron-l3-agent restart
-          # service neutron-metadata-agent restart
-          # service neutron-linuxbridge-agent restart
-   * - Networking service (compute node)
+          # systemctl restart neutron-server
+          # systemctl restart neutron-dhcp-agent
+          # systemctl restart neutron-l3-agent
+          # systemctl restart neutron-metadata-agent
+          # systemctl restart neutron-openvswitch-agent
+
+   * - Networking service (compute node, for OVS)
      - .. code-block:: console
 
-          # service neutron-linuxbridge-agent restart
+          # systemctl restart neutron-openvswitch-agent
+
+   * - Networking service (controller node, for OVN)
+     - .. code-block:: console
+
+          # systemctl restart neutron-server
+          # systemctl restart neutron-ovn-maintenance-worker
+          # systemctl restart neutron-periodic-workers
+
+   * - Networking service (compute node, for OVN)
+     - .. code-block:: console
+
+          # systemctl restart neutron-ovn-metadata-agent
+
    * - Block Storage service
      - .. code-block:: console
 
-          # service cinder-api restart
-          # service cinder-backup restart
-          # service cinder-scheduler restart
-          # service cinder-volume restart
-   * - Block Storage service
+          # systemctl restart cinder-api
+          # systemctl restart cinder-backup
+          # systemctl restart cinder-scheduler
+          # systemctl restart cinder-volume
+
+   * - Shared Filesystems service
      - .. code-block:: console
 
-          # service manila-api restart
-          # service manila-data restart
-          # service manila-share restart
-          # service manila-scheduler restart
+          # systemctl restart manila-api
+          # systemctl restart manila-data
+          # systemctl restart manila-share
+          # systemctl restart manila-scheduler
+
    * - Object Storage service
      - .. code-block:: console
 
-          # service swift-account-auditor restart
-          # service swift-account-server restart
-          # service swift-account-reaper restart
-          # service swift-account-replicator restart
-          # service swift-container-auditor restart
-          # service swift-container-server restart
-          # service swift-container-reconciler restart
-          # service swift-container-replicator restart
-          # service swift-container-sync restart
-          # service swift-container-updater restart
-          # service swift-object-auditor restart
-          # service swift-object-expirer restart
-          # service swift-object-server restart
-          # service swift-object-reconstructor restart
-          # service swift-object-replicator restart
-          # service swift-object-updater restart
-          # service swift-proxy-server restart
+          # systemctl restart swift-account-auditor
+          # systemctl restart swift-account-server
+          # systemctl restart swift-account-reaper
+          # systemctl restart swift-account-replicator
+          # systemctl restart swift-container-auditor
+          # systemctl restart swift-container-server
+          # systemctl restart swift-container-reconciler
+          # systemctl restart swift-container-replicator
+          # systemctl restart swift-container-sync
+          # systemctl restart swift-container-updater
+          # systemctl restart swift-object-auditor
+          # systemctl restart swift-object-expirer
+          # systemctl restart swift-object-server
+          # systemctl restart swift-object-reconstructor
+          # systemctl restart swift-object-replicator
+          # systemctl restart swift-object-updater
+          # systemctl restart swift-proxy-server
 
-
-Troubleshooting Instance connectivity issues
+Troubleshooting instance connectivity issues
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-This section will focus on troubleshooting general instance (VM)
+This section will focus on troubleshooting general instances
 connectivity communication. This does not cover any networking related
-to instance connectivity. This is assuming a OpenStack-Ansible install using
-LXC containers, VXLAN overlay and the Linuxbridge ml2 driver.
+to instance connectivity. This is assuming a OpenStack-Ansible install using LXC
+containers, VXLAN overlay for ML2/OVS and Geneve overlay for the ML2/OVN driver.
 
-**Data flow example**
+**Data flow example (for OVS)**
 
 .. code-block:: console
 
    COMPUTE NODE
                                                   +-------------+    +-------------+
-                                  +->"If VXLAN"+->+  *br vxlan  +--->+  bond#.#00  +---+
+                                  +->"If VXLAN"+->+  *br vxlan  +--->+  bond0.#00  +---+
                                   |               +-------------+    +-------------+   |
                    +-------------+                                                      |   +-----------------+
-   Instance +--->  | brq bridge  |++                                                    +-->| physical network|
+   Instance +--->  | qbr bridge  |++                                                    +-->| physical network|
                    +-------------+                                                      |   +-----------------+
                                   |               +-------------+    +-------------+   |
                                   +->"If  VLAN"+->+   br vlan   +--->+    bond1    +---+
@@ -287,29 +298,44 @@ LXC containers, VXLAN overlay and the Linuxbridge ml2 driver.
 
 
    NETWORK NODE
-                                     +-------------+    +-------------+   +-----------------+
-                     +->"If VXLAN"+->+  *bond#.#00 +--->+ *br vxlan   +-->+*Container eth10 +
-                     |               +-------------+    +-------------+   +-----------------+
-   +----------------+                                                                         |       +-------------+
-   |physical network|++                                                                       +--->+ |  brq bridge  |+--> Neutron DHCP/Router
-   +----------------+                                                                         |       +-------------+
-                     |               +-------------+    +-------------+   +-----------------+
-                     +->"If  VLAN"+->+   bond1     +--->+  br vlan    +-->+ Container eth11 +
-                                     +-------------+    +-------------+   +-----------------+
+                                     +-------------+    +-------------+
+                     +->"If VXLAN"+->+  *bond#.#00 +--->+ *br-vxlan   +-->
+                     |               +-------------+    +-------------+  |
+   +----------------+                                                     |     +-------------+
+   |physical network|++                                                   +--->+|  qbr bridge |+--> Neutron DHCP/Router
+   +----------------+                                                     |     +-------------+
+                     |               +-------------+    +-------------+  |
+                     +->"If  VLAN"+->+   bond1     +--->+  br-vlan    +-->
+                                     +-------------+    +-------------+
+
+**Data flow example (for OVN)**
+
+.. code-block:: console
+
+      COMPUTE NODE
+                                                   +-------------+    +-------------+
+                                  +->"If Geneve"+->+  *br-vxlan  +--->+  bond0.#00  +---+
+                                  |                +-------------+    +-------------+   |
+                   +-------------+                                                      |   +-----------------+
+   Instance +--->  |   br-int    |++                                                    +-->| physical network|
+                   +-------------+                                                      |   +-----------------+
+                                  |              +-------------+    +-------------+     |
+                                  +->"If VLAN"+->+   br-vlan   +--->+    bond1    +-----+
+                                                 +-------------+    +-------------+
 
 Preliminary troubleshooting questions to answer:
 ------------------------------------------------
 
-- Which compute node is hosting the VM in question?
+- Which compute node is hosting the instance in question?
 - Which interface is used for provider network traffic?
-- Which interface is used for VXLAN overlay?
-- Is the connectivity issue ingress to the instance?
-- Is the connectivity issue egress from the instance?
+- Which interface is used for VXLAN (Geneve) overlay?
+- Is there connectivity issue ingress to the instance?
+- Is there connectivity issue egress from the instance?
 - What is the source address of the traffic?
 - What is the destination address of the traffic?
-- Is there a Neutron router in play?
+- Is there a Neutron Router in play?
 - Which network node (container) is the router hosted?
-- What is the tenant network type?
+- What is the project network type?
 
 If VLAN:
 
@@ -335,13 +361,13 @@ or other instances in the same network?
 No:
     - Check nova console logs to see if the instance
       ever received its IP address initially.
-    - Check Neutron ``security-group-rules``,
+    - Check ``security-group-rules``,
       consider adding allow ICMP rule for testing.
-    - Check that linux bridges contain the proper interfaces.
+    - Check that OVS bridges contain the proper interfaces
       on compute and network nodes.
     - Check Neutron DHCP agent logs.
     - Check syslogs.
-    - Check Neutron linux bridge logs.
+    - Check Neutron Open vSwitch agent logs.
 
 Yes:
     - Good! This suggests that the instance received its IP address
@@ -354,26 +380,31 @@ Yes:
    network resources like DHCP.
 
 Does the instance's IP address ping from the gateway device
-(Neutron router namespace or another gateway device)?
+(Neutron Router namespace or another gateway device)?
 
 No:
     - Check Neutron L3 agent logs (if applicable).
-    - Check Neutron linuxbridge logs.
+    - Check Neutron Open vSwitch logs.
     - Check physical interface mappings.
-    - Check Neutron Router ports (if applicable).
-    - Check that linux bridges contain the proper interfaces
+    - Check Neutron router ports (if applicable).
+    - Check that OVS bridges contain the proper interfaces
       on compute and network nodes.
-    - Check Neutron ``security-group-rules``,
+    - Check ``security-group-rules``,
       consider adding allow ICMP rule for testing.
+      In case of using OVN check additionally:
+    - Check ovn-controller on all nodes.
+    - Verify ovn-northd is running and DBs are healthy.
+    - Ensure ovn-metadata-agent is active.
+    - Review logs for ovn-controller, ovn-northd.
 
 Yes:
     - Good! The instance can ping its intended gateway.
       The issue may be north of the gateway
       or related to the provider network.
     - Check "gateway" or host routes on the Neutron subnet.
-    - Check Neutron ``security-group-rules``,
+    - Check ``security-group-rules``,
       consider adding ICMP rule for testing.
-    - Check Neutron FloatingIP associations (if applicable).
+    - Check Floating IP associations (if applicable).
     - Check Neutron Router external gateway information (if applicable).
     - Check upstream routes, NATs or access-control-lists.
 
@@ -381,7 +412,7 @@ Yes:
 
    Do not continue until the instance can reach its gateway.
 
-If VXLAN:
+If VXLAN (Geneve):
 
 Does physical interface show link and all VLANs properly trunked
 across physical network?
@@ -399,25 +430,24 @@ Yes:
 
    Do not continue until physical network is properly configured.
 
-Are VXLAN VTEP addresses able to ping each other?
+Are VXLAN (Geneve) VTEP addresses able to ping each other?
 
 No:
-    - Check ``br-vxlan`` interface on Compute and ``eth10``
-      inside the Neutron network agent container.
-    - Check veth pairs between containers and linux bridges on the host.
-    - Check that linux bridges contain the proper interfaces
+    - Check ``br-vxlan`` interface on Compute and Network nodes.
+    - Check veth pairs between containers and Linux bridges on the host.
+    - Check that OVS bridges contain the proper interfaces
       on compute and network nodes.
 
 Yes:
-    - Check ml2 config file for local VXLAN IP
-      and other VXLAN configuration settings.
+    - Check ml2 config file for local VXLAN (Geneve) IP
+      and other VXLAN (Geneve) configuration settings.
     - Check VTEP learning method (multicast or l2population):
         - If multicast, make sure the physical switches are properly
           allowing and distributing multicast traffic.
 
 .. important::
 
-   Do not continue until VXLAN endpoints have reachability to each other.
+   Do not continue until VXLAN (Geneve) endpoints have reachability to each other.
 
 Does the instance's IP address ping from network's DHCP namespace
 or other instances in the same network?
@@ -425,15 +455,16 @@ or other instances in the same network?
 No:
     - Check Nova console logs to see if the instance
       ever received its IP address initially.
-    - Check Neutron ``security-group-rules``,
+    - Check ``security-group-rules``,
       consider adding allow ICMP rule for testing.
-    - Check that linux bridges contain the proper interfaces
+    - Check that OVS bridges contain the proper interfaces
       on compute and network nodes.
     - Check Neutron DHCP agent logs.
     - Check syslogs.
-    - Check Neutron linux bridge logs.
+    - Check Neutron Open vSwitch agent logs.
     - Check that Bridge Forwarding Database (fdb) contains the proper
-      entries on both the compute and Neutron agent container.
+      entries on both the compute and Neutron agent container
+      (``ovs-appctl fdb/show br-int``).
 
 Yes:
     - Good! This suggests that the instance received its IP address
@@ -445,39 +476,42 @@ Yes:
    resources.
 
 Does the instance's IP address ping from the gateway device
-(Neutron router namespace or another gateway device)?
+(Neutron Router namespace or another gateway device)?
 
 No:
     - Check Neutron L3 agent logs (if applicable).
-    - Check Neutron linux bridge logs.
+    - Check Neutron Open vSwitch agent logs.
     - Check physical interface mappings.
     - Check Neutron router ports (if applicable).
-    - Check that linux bridges contain the proper interfaces
+    - Check that OVS bridges contain the proper interfaces
       on compute and network nodes.
-    - Check Neutron ``security-group-rules``,
+    - Check ``security-group-rules``,
       consider adding allow ICMP rule for testing.
     - Check that Bridge Forwarding Database (fdb) contains
-      the proper entries on both the compute and Neutron agent container.
+      the proper entries on both the compute and Neutron agent container
+      (``ovs-appctl fdb/show br-int``).
+      In case of using OVN check additionally:
+    - Check ovn-controller on all nodes.
+    - Verify ovn-northd is running and DBs are healthy.
+    - Ensure ovn-metadata-agent is active.
+    - Review logs for ovn-controller, ovn-northd.
 
 Yes:
     - Good! The instance can ping its intended gateway.
     - Check gateway or host routes on the Neutron subnet.
-    - Check Neutron ``security-group-rules``,
+    - Check ``security-group-rules``,
       consider adding ICMP rule for testing.
-    - Check Neutron FloatingIP associations (if applicable).
+    - Check Neutron Floating IP associations (if applicable).
     - Check Neutron Router external gateway information (if applicable).
     - Check upstream routes, NATs or ``access-control-lists``.
 
 Diagnose Image service issues
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The ``glance-registry`` handles the database operations for managing the
-storage of the image index and properties. The ``glance-api`` handles the
-API interactions and image store.
+The ``glance-api`` handles the API interactions and image store.
 
 To troubleshoot problems or errors with the Image service, refer to
-:file:`/var/log/glance-api.log` and :file:`/var/log/glance-registry.log` inside
-the glance api container.
+:file:`/var/log/glance-api.log` inside the glance api container.
 
 You can also conduct the following activities which may generate logs to help
 identity problems:
@@ -489,31 +523,9 @@ identity problems:
    registry is working.
 
 For an example and more information, see `Verify operation
-<https://docs.openstack.org/glance/latest/install/verify.html>_`.
+<https://docs.openstack.org/glance/latest/install/verify.html>`_
 and `Manage Images
-<https://docs.openstack.org/glance/latest/admin/manage-images.html>_`
-
-RabbitMQ issues
-~~~~~~~~~~~~~~~
-
-Analyze RabbitMQ queues
------------------------
-
-.. The title should state what issue is being resolved? DC
-
-Analyze OpenStack service logs and RabbitMQ logs
-------------------------------------------------
-
-.. The title should state what issue is being resolved? DC
-
-Failed security hardening after host kernel upgrade from version 3.13
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Ubuntu kernel packages newer than version 3.13 contain a change in
-module naming from ``nf_conntrack`` to ``br_netfilter``. After
-upgrading the kernel, run the ``openstack-hosts-setup.yml``
-playbook against those hosts. For more information, see
-`OSA bug 157996 <https://bugs.launchpad.net/openstack-ansible/+bug/1579963>`_.
+<https://docs.openstack.org/glance/latest/admin/manage-images.html>`_.
 
 Cached Ansible facts issues
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -537,8 +549,7 @@ To set this permanently, set this variable in
 ``/usr/local/bin/openstack-ansible.rc``.
 Refer to the Ansible documentation on `fact caching`_ for more details.
 
-.. _fact caching: https://docs.ansible.com/ansible/latest/user_guide/playbooks_variables.html#fact-caching
-
+.. _fact caching: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_vars_facts.html
 
 Forcing regeneration of cached facts
 ------------------------------------
@@ -562,10 +573,36 @@ To clear facts for a single host, find its file within
 a JSON file that is named after its hostname. The facts for that host
 will be regenerated on the next playbook run.
 
+Rebuilding Python Virtual Environments
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Failed ansible playbooks during an upgrade
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In certain situations, you may need to forcefully rebuild a service's
+Python virtual environment. This can be required if the
+``python_venv_build`` role fails (for example, due to temporary
+package conflicts), or if you want to reset the virtual environment
+after manual modifications.
 
+Two variables control the rebuild process:
+
+* ``venv_rebuild`` — resets the virtual environment to its intended
+  state without rebuilding wheels. This is usually sufficient when the
+  service version has not changed and only the venv state needs to be
+  restored.
+
+* ``venv_wheels_rebuild`` — additionally forces a rebuild of the
+  Python wheels. This may be required if the service version has
+  changed or if its venv requirements were modified.
+
+To trigger a rebuild for a specific service, re-run its playbook with
+the following environment variables:
+
+.. code-block:: shell-session
+
+   # reset the venv state
+   openstack-ansible openstack.osa.nova -e venv_rebuild=true
+
+   # reset the venv state and rebuild wheels
+   openstack-ansible openstack.osa.nova -e venv_rebuild=true -e venv_wheels_rebuild=true
 
 Container networking issues
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -631,7 +668,6 @@ communications between the various containers. To narrow the focus,
 run ``tcpdump`` only on the desired network interface of the
 containers.
 
-
 Restoring inventory from backup
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -653,7 +689,6 @@ Example inventory restore process.
     cp openstack_inventory.json-YYYYMMDD_SSSSSS.json /etc/openstack_deploy/openstack_inventory.json
     cd -
     rm -rf /tmp/inventory_restore
-
 
 At the completion of this operation the inventory will be restored to the
 earlier version.

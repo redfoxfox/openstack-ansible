@@ -40,19 +40,17 @@ export ANSIBLE_LOG_DIR="/openstack/log/ansible-logging"
 export SCENARIO=${1:-"aio_lxc"}
 
 # Set the action base on the second CLI parameter
-# Actions available: [ 'deploy', 'upgrade', 'varstest', 'linters' ]
+# Actions available: [ 'deploy', 'upgrade', 'varstest', 'shastest', 'linters' ]
 export ACTION=${2:-"deploy"}
 
 # Set the installation method for the OpenStack services
 export INSTALL_METHOD=${3:-"source"}
 
-# Set the source branch for upgrade tests
-# Be sure to change this whenever a new stable branch
-# is created. The checkout must always be N-1.
-export UPGRADE_SOURCE_BRANCH=${UPGRADE_SOURCE_BRANCH:-'stable/train'}
-
 # enable the ARA callback plugin
 export SETUP_ARA=${SETUP_ARA:-true}
+
+# List of scenarios that update configuration files prior to the upgrade
+export SCENARIOS_WITH_CONFIG_UPDATE=("tls")
 
 ## Change branch for Upgrades ------------------------------------------------
 # If the action is to upgrade, then store the current SHA,
@@ -60,10 +58,21 @@ export SETUP_ARA=${SETUP_ARA:-true}
 # deployment.
 # This needs to be done before the first "source" to ensure
 # the correct functions are used for the branch.
-if [[ "${ACTION}" == "upgrade" ]]; then
+if [[ "${ACTION}" =~ "upgrade" ]]; then
+    # Set the source branch for upgrade tests
+    # Be sure to change this whenever a new stable branch
+    # is created.
+    # The branch prefix will also change from 'stable/' to 'unmaintained/'
+    # in the future, so determine the branch prefix dynamically
+    UPGRADE_ACTION_ARRAY=(${ACTION//_/ })
+    export UPGRADE_SOURCE_RELEASE=${UPGRADE_ACTION_ARRAY[1]:-'2026.1'}
+    export UPGRADE_SOURCE_BRANCH_PREFIX=$(git branch -r --list 'origin/*' | grep $UPGRADE_SOURCE_RELEASE | sort | tail -n 1 | cut -d '/' -f 2)
+    export UPGRADE_SOURCE_BRANCH=${UPGRADE_SOURCE_BRANCH:-$UPGRADE_SOURCE_BRANCH_PREFIX/$UPGRADE_SOURCE_RELEASE}
+
     # Store the target SHA/branch
     export UPGRADE_TARGET_BRANCH=$(git rev-parse HEAD)
-    export OPENSTACK_SETUP_EXTRA_ARGS="-e tempest_install=no -e tempest_run=no"
+    export OPENSTACK_SETUP_EXTRA_ARGS="-e tempest_install=no -e tempest_run=no -e rally_install=no"
+    export ANSIBLE_GATHER_SUBSET="network,hardware,virtual"
 
     # Now checkout the source SHA/branch
     git checkout ${UPGRADE_SOURCE_BRANCH}
@@ -77,30 +86,33 @@ fi
 info_block "Checking for required libraries." 2> /dev/null || source "${OSA_CLONE_DIR}/scripts/scripts-library.sh"
 
 ## Main ----------------------------------------------------------------------
-
 # Log some data about the instance and the rest of the system
+gate_log_requirements
+
 log_instance_info
 
 run_dstat || true
 
-load_nodepool_pip_opts
-
 # Bootstrap Ansible
-source "${OSA_CLONE_DIR}/scripts/bootstrap-ansible.sh"
+if [[ -z "${SKIP_OSA_BOOTSTRAP_AIO+defined}" ]]; then
+  source "${OSA_CLONE_DIR}/scripts/bootstrap-ansible.sh"
+fi
 
 # Flush all the iptables rules set by openstack-infra
-iptables -F
-iptables -X
-iptables -t nat -F
-iptables -t nat -X
-iptables -t mangle -F
-iptables -t mangle -X
-iptables -P INPUT ACCEPT
-iptables -P FORWARD ACCEPT
-iptables -P OUTPUT ACCEPT
+if command -v iptables; then
+  iptables -F
+  iptables -X
+  iptables -t nat -F
+  iptables -t nat -X
+  iptables -t mangle -F
+  iptables -t mangle -X
+  iptables -P INPUT ACCEPT
+  iptables -P FORWARD ACCEPT
+  iptables -P OUTPUT ACCEPT
+fi
 
 # Bootstrap an AIO
-if [[ -z "${SKIP_OSA_BOOTSTRAP_AIO+defined}" ]]; then
+if [[ -z "${SKIP_OSA_BOOTSTRAP_AIO+defined}" && "${ACTION}" != "linters" &&  "${ACTION}" != "shastest" ]]; then
     source "${OSA_CLONE_DIR}/scripts/bootstrap-aio.sh"
 fi
 
@@ -108,10 +120,14 @@ if [[ "${ACTION}" == "varstest" ]]; then
   pushd "${OSA_CLONE_DIR}/tests"
       openstack-ansible test-vars-overrides.yml
   popd
+elif [[ "${ACTION}" == "shastest" ]]; then
+  pushd "${OSA_CLONE_DIR}/tests"
+      openstack-ansible test-upstream-shas.yml
+  popd
 elif [[ "${ACTION}" == "linters" ]]; then
-  pushd "${OSA_CLONE_DIR}/playbooks"
+  pushd "${OSA_CLONE_DIR}"
     # Install linter tools
-    ${PIP_COMMAND} install --isolated ${PIP_OPTS} -r ${OSA_CLONE_DIR}/test-requirements.txt
+    ${PIP_COMMAND} install --isolated -r ${OSA_CLONE_DIR}/test-requirements.txt
     # Disable Ansible color output
     export ANSIBLE_NOCOLOR=1
     # Create ansible logging directory
@@ -122,16 +138,18 @@ elif [[ "${ACTION}" == "linters" ]]; then
 
     # defining working directories
     VENV_BIN_DIR=$(dirname ${PIP_COMMAND})
-    ROLE_DIR="/etc/ansible/roles/${SCENARIO}"
 
-    ANSIBLE_LINT_EXCLUDES="204,metadata"
+    source /usr/local/bin/openstack-ansible.rc
     # Check if we have test playbook and running checks
-    if [[ -f "${ROLE_DIR}/examples/playbook.yml" ]]; then
-      ${VENV_BIN_DIR}/ansible-lint ${ROLE_DIR}/examples/playbook.yml -x ${ANSIBLE_LINT_EXCLUDES}
-      ${VENV_BIN_DIR}/ansible-playbook --syntax-check --list-tasks ${ROLE_DIR}/examples/playbook.yml
+    if [[ -f "/etc/ansible/roles/${SCENARIO}/examples/playbook.yml" ]]; then
+      ROLE_DIR="/etc/ansible/roles/${SCENARIO}"
+      ${VENV_BIN_DIR}/ansible-lint ${ROLE_DIR}/examples/playbook.yml -c ${OSA_CLONE_DIR}/.ansible-lint
+      ansible-playbook --syntax-check --list-tasks ${ROLE_DIR}/examples/playbook.yml
+    # If we don't have test playbook we assume that we're testing integrated repo
     else
-      ${VENV_BIN_DIR}/ansible-lint ${ROLE_DIR} -x ${ANSIBLE_LINT_EXCLUDES}
-      ${VENV_BIN_DIR}/ansible-playbook --syntax-check --list-tasks setup-everything.yml
+      ROLE_DIR="${OSA_CLONE_DIR}"
+      ${VENV_BIN_DIR}/ansible-lint playbooks/ --exclude /etc/ansible/roles
+      ansible-playbook --syntax-check --list-tasks openstack.osa.setup_everything
     fi
 
     # Run bashate
@@ -150,11 +168,13 @@ elif [[ "${ACTION}" == "linters" ]]; then
       --exclude-dir *.egg-info \
       --exclude-dir doc \
       "${ROLE_DIR}" | xargs -r ${VENV_BIN_DIR}/flake8 --verbose
+
   popd
 else
   pushd "${OSA_CLONE_DIR}/playbooks"
     # Disable Ansible color output
     export ANSIBLE_NOCOLOR=1
+    export ANSIBLE_GATHER_SUBSET=${ANSIBLE_GATHER_SUBSET:-'!all,min,processor_count'}
 
     # Create ansible logging directory
     mkdir -p ${ANSIBLE_LOG_DIR}
@@ -165,30 +185,46 @@ else
     # First we gather facts about the hosts to populate the fact cache.
     # We can't gather the facts for all hosts yet because the containers
     # aren't built yet.
-    ansible -m setup -a 'gather_subset=network,hardware,virtual' hosts 2>${ANSIBLE_LOG_DIR}/facts-hosts.log
+    ansible -m setup -a "gather_subset=${ANSIBLE_GATHER_SUBSET}" hosts 2>${ANSIBLE_LOG_DIR}/facts-hosts.log
 
     # Prepare the hosts
     export ANSIBLE_LOG_PATH="${ANSIBLE_LOG_DIR}/setup-hosts.log"
-    openstack-ansible setup-hosts.yml -e osa_gather_facts=False
+    openstack-ansible openstack.osa.setup_hosts -e '{"osa_gather_facts": false}'
 
     # Log some data about the instance and the rest of the system
     log_instance_info
 
-    # Once setup-hosts is complete, we should gather facts for everything
+    if [[ $SCENARIO =~ "hosts" ]]; then
+      # Verify our hosts setup and do not continue with openstack/infra part
+      openstack-ansible openstack.osa.healthcheck.hosts -e '{"osa_gather_facts": false}'
+      exit $?
+    fi
+
+    # Reload environment file and apply variables for the session
+    set -a
+    . /etc/environment
+    set +a
+
+    # Once setup_hosts is complete, we should gather facts for everything
     # (now including containers) so that the fact cache is complete for the
     # remainder of the run.
-    ansible -m setup -a 'gather_subset=network,hardware,virtual' all 1>${ANSIBLE_LOG_DIR}/facts-all.log
+    ansible -m setup -a "gather_subset=${ANSIBLE_GATHER_SUBSET}" all 1>${ANSIBLE_LOG_DIR}/facts-all.log
 
     # Prepare the infrastructure
     export ANSIBLE_LOG_PATH="${ANSIBLE_LOG_DIR}/setup-infrastructure.log"
-    openstack-ansible setup-infrastructure.yml -e osa_gather_facts=False
+    openstack-ansible openstack.osa.setup_infrastructure -e '{"osa_gather_facts": false}'
 
     # Log some data about the instance and the rest of the system
     log_instance_info
 
+    if [[ $SCENARIO =~ "infra" && ! $ACTION =~ "upgrade"  ]]; then
+      # Verify our infra setup and do not continue with openstack part
+      openstack-ansible openstack.osa.healthcheck.infrastructure -e '{"osa_gather_facts": false}'
+    fi
+
     # Setup OpenStack
     export ANSIBLE_LOG_PATH="${ANSIBLE_LOG_DIR}/setup-openstack.log"
-    openstack-ansible setup-openstack.yml -e osa_gather_facts=False ${OPENSTACK_SETUP_EXTRA_ARGS:-}
+    openstack-ansible openstack.osa.setup_openstack -e '{"osa_gather_facts": false}' ${OPENSTACK_SETUP_EXTRA_ARGS:-}
 
     # Log some data about the instance and the rest of the system
     log_instance_info
@@ -198,7 +234,7 @@ fi
 
 # If the action is to upgrade, then checkout the original SHA for
 # the checkout, and execute the upgrade.
-if [[ "${ACTION}" == "upgrade" ]]; then
+if [[ "${ACTION}" =~ "upgrade" ]]; then
 
     # Checkout the original HEAD we started with
     git checkout ${UPGRADE_TARGET_BRANCH}
@@ -207,20 +243,46 @@ if [[ "${ACTION}" == "upgrade" ]]; then
     # script to allow newer versions of Ansible and global
     # requirements to be installed.
     unset ANSIBLE_PACKAGE
-    unset UPPER_CONSTRAINTS_FILE
+    unset TOX_CONSTRAINTS_FILE
     unset PIP_OPTS
-
-    load_nodepool_pip_opts
+    unset UPGRADE_TARGET_BRANCH
 
     # Source the current scripts-library.sh functions
     source "${OSA_CLONE_DIR}/scripts/scripts-library.sh"
     # We need this as in stein we were deploying custom
     # /etc/openstack_deploy/env.d/aio_metal.yml for metal installs
     export SKIP_CUSTOM_ENVD_CHECK=true
+
+    # Export ZUUL_SRC_PATH only when integrated repo folder exists. Based on that
+    # we make an assumption about if we're in CI or not
+    if [[ -d "/home/zuul/src/opendev.org/openstack/openstack-ansible" ]]; then
+      export ZUUL_SRC_PATH="/home/zuul/src"
+      # Doing symlinking here, as bootstrap role won't be called
+      ln -s $ZUUL_SRC_PATH /openstack/src
+      # Run a zuul playbook to place use zuul-prepared roles/requirements to
+      # respect defined Depends-On on N. action=deploy is set as otherwise tasks will be skipped.
+      export DROP_ROLE_DIRS=true
+      ansible-playbook /home/zuul/src/opendev.org/openstack/openstack-ansible/zuul.d/playbooks/pre-osa-requirements.yml \
+        -e pre_osa_host=localhost -e load_zuul_vars=False -e action=deploy
+      unset DROP_ROLE_DIRS
+    fi
+    # Update AIO config files for certain scenarios
+    # for item in "${SCENARIOS_WITH_CONFIG_UPDATE[@]}"; do
+    #   if [[ "${SCENARIO}" =~ "${item}" ]]; then
+    export BOOTSTRAP_EXTRA_PARAMS="${BOOTSTRAP_EXTRA_PARAMS:-} -t prepare-aio-config"
+    "${OSA_CLONE_DIR}/scripts/bootstrap-aio.sh"
+    #     break
+    #   fi
+    # done
     # To execute the upgrade script we need to provide
     # an affirmative response to the warning that the
     # upgrade is irreversable.
-    echo 'YES' | bash "${OSA_CLONE_DIR}/scripts/run-upgrade.sh"
+    echo 'YES' | SOURCE_SERIES=${UPGRADE_SOURCE_RELEASE} bash "${OSA_CLONE_DIR}/scripts/run-upgrade.sh"
+
+    if [[ $SCENARIO =~ "infra" ]]; then
+      # Verify our infra setup after upgrade
+      openstack-ansible openstack.osa.healthcheck.infrastructure -e '{"osa_gather_facts": false}'
+    fi
 
 fi
 

@@ -1,14 +1,10 @@
-========================
-Team and repository tags
-========================
+=================
+OpenStack-Ansible
+=================
 
 .. image:: https://governance.openstack.org/tc/badges/openstack-ansible.svg
-    :target: https://governance.openstack.org/tc/reference/tags/index.html
 
 .. Change things from this point on
-
-OpenStack-Ansible
-#################
 
 OpenStack-Ansible is an `official OpenStack project`_ which aims to deploy
 production environments from source in a way that makes it scalable while
@@ -34,7 +30,7 @@ at `Source`_.
 If you have some questions, or would like some assistance with achieving your
 goals, then please feel free to reach out to us on the
 `OpenStack Mailing Lists`_ (particularly openstack-discuss)
-or on IRC in ``#openstack-ansible`` on the `freenode network`_.
+or on IRC in ``#openstack-ansible`` on the `OFTC network`_.
 
 OpenStack-Ansible Roles
 #######################
@@ -50,11 +46,11 @@ https://opendev.org/openstack/openstack-ansible-<ROLENAME>.
 .. _Home Page: https://governance.openstack.org/tc/reference/projects/openstackansible.html
 .. _Deployment Guide: https://docs.openstack.org/project-deploy-guide/openstack-ansible/latest
 .. _Quick Start: https://docs.openstack.org/openstack-ansible/latest/user/aio/quickstart.html
-.. _Developer Documentation: https://docs.openstack.org/openstack-ansible/latest/contributor/index.html
+.. _Developer Documentation: https://docs.openstack.org/openstack-ansible/latest/contributors/index.html
 .. _Source: https://opendev.org/openstack/openstack-ansible
-.. _OpenStack Mailing Lists: http://lists.openstack.org/
-.. _freenode network: https://freenode.net/
-.. _Role Documentation: https://docs.openstack.org/project-deploy-guide/openstack-ansible/draft/configure.html#advanced-service-configuration
+.. _OpenStack Mailing Lists: https://lists.openstack.org/mailman3/lists/
+.. _OFTC network: https://www.oftc.net/
+.. _Role Documentation: https://docs.openstack.org/project-deploy-guide/openstack-ansible/latest/configure.html#advanced-service-configuration
 
 Resources
 #########
@@ -63,4 +59,4 @@ Resources
 * Documentation: https://docs.openstack.org/openstack-ansible/latest/
 * Source: https://opendev.org/openstack/openstack-ansible
 * Bugs: https://bugs.launchpad.net/openstack-ansible
-* Release notes:  https://docs.openstack.org/releasenotes/openstack-ansible/
+* Release notes: https://docs.openstack.org/releasenotes/openstack-ansible/

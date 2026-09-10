@@ -1,0 +1,93 @@
+---
+# Copyright 2020, VEXXHOST, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+- name: Cleanup gate images
+  hosts: all
+  become: true
+  become_user: root
+  tasks:
+    - name: Remove package excludes for dnf
+      ansible.builtin.lineinfile:
+        dest: '/etc/dnf/dnf.conf'
+        regexp: "^exclude="
+        state: absent
+      when: ansible_pkg_mgr == 'dnf'
+
+    - name: Replace mirrorlist with specific mirrors for Rocky
+      when:
+        - ansible_facts['distribution'] | lower == 'rocky'
+      block:
+        - name: Comment out mirrorlist for Rocky
+          ansible.builtin.replace:
+            path: "/etc/yum.repos.d/{{ item }}"
+            regexp: "^(mirrorlist=.*)$"
+            replace: "#\\1"
+          with_items:
+            - rocky.repo
+            - rocky-extras.repo
+            - rocky-devel.repo
+            - rocky-addons.repo
+
+        - name: Uncomment baseurl for Rocky
+          ansible.builtin.replace:
+            path: "/etc/yum.repos.d/{{ item }}"
+            regexp: "^#(baseurl=.*)$"
+            replace: "\\1"
+          with_items:
+            - rocky.repo
+            - rocky-extras.repo
+            - rocky-devel.repo
+            - rocky-addons.repo
+
+        - name: Ensure /etc has proper permissions
+          ansible.builtin.file:
+            path: /etc
+            mode: "0755"
+            state: directory
+
+    - name: Adjust ssh server configuration based on STIG requirements
+      vars:
+        sshd_settings:
+          - name: GSSAPIAuthentication
+            value: "no"
+          - name: KerberosAuthentication
+            value: "no"
+          - name: PasswordAuthentication
+            value: "no"
+      ansible.builtin.blockinfile:
+        dest: /etc/ssh/sshd_config
+        state: present
+        marker: "# {mark} MANAGED BY PRE-OSA step"
+        insertbefore: "BOF"
+        validate: '/usr/sbin/sshd -T -f %s'
+        block: |-
+          {% for option in sshd_settings %}
+          {{ option['name'] ~ ' ' ~ option['value'] }}
+          {% endfor %}
+      notify:
+        - Restart ssh
+
+    - name: Remove motd from pam.d
+      ansible.builtin.lineinfile:
+        path: /etc/pam.d/sshd
+        regexp: '^(session\s*optional\s*pam_motd.so.*)$'
+        line: '# \1'
+        backrefs: true
+
+  handlers:
+    - name: Restart ssh
+      ansible.builtin.service:
+        name: "sshd"
+        state: restarted

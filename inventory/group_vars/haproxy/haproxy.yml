@@ -19,423 +19,136 @@ keepalived_selinux_compile_rules:
   - keepalived_ping
   - keepalived_haproxy_pid_file
 
+haproxy_ssl_letsencrypt_enable: false
+haproxy_ssl_letsencrypt_acl:
+  letsencrypt-acl:
+    rule: "path_beg /.well-known/acme-challenge/"
+    backend_name: letsencrypt
+
 # Ensure that the package state matches the global setting
 haproxy_package_state: "{{ package_state }}"
 
-haproxy_whitelist_networks:
-  - 192.168.0.0/16
-  - 172.16.0.0/12
-  - 10.0.0.0/8
+# Variables to set security headers used by browsers
+haproxy_security_headers_max_age: 31536000
+# Set CSP headers to report only for testing
+haproxy_security_headers_csp_report_only: False
+haproxy_security_child_src_records:
+  - "{{ external_lb_vip_address }}:{{ nova_spice_html5proxy_base_port }}"
+  - "{{ external_lb_vip_address }}:{{ nova_novncproxy_port }}"
+  - "{{ external_lb_vip_address }}:{{ nova_serialconsoleproxy_port }}"
+  - "{{ ('zun_all' in groups and groups['zun_all'] | length > 0) | ternary(external_lb_vip_address ~ ':' ~  zun_wsproxy_port, '') }}"
+haproxy_security_frame_ancestors_records: []
+haproxy_security_frame_src_records: "{{ haproxy_security_child_src_records }}"
+haproxy_security_connect_src_records:
+  - "{{ external_lb_vip_address }}:*"
+  - "wss://{{ external_lb_vip_address }}:{{ ironic_console_port }}"
+  - "{{ ('zun_all' in groups and groups['zun_all'] | length > 0) | ternary(zun_wsproxy_proto ~ '://' ~ external_lb_vip_address ~ ':' ~ zun_wsproxy_port, '') }}"
+haproxy_security_headers_csp: >
+  http-response set-header {{ haproxy_security_headers_csp_report_only | ternary('Content-Security-Policy-Report-Only', 'Content-Security-Policy') }} "
+  default-src 'self';
+  frame-ancestors 'self' {{ haproxy_security_frame_ancestors_records | join(' ') }};
+  form-action 'self';
+  upgrade-insecure-requests;
+  style-src 'self' 'unsafe-inline';
+  script-src 'self' 'unsafe-inline' 'unsafe-eval';
+  child-src 'self' {{ haproxy_security_child_src_records | select | join(' ') }};
+  frame-src 'self' {{ haproxy_security_frame_src_records | select | join(' ') }};
+  connect-src 'self' {{ haproxy_security_connect_src_records | select | join(' ') }};
+  img-src 'self' data:;
+  worker-src blob:;
+  "
 
-haproxy_galera_whitelist_networks: "{{ haproxy_whitelist_networks }}"
-haproxy_glance_registry_whitelist_networks: "{{ haproxy_whitelist_networks }}"
-haproxy_keystone_admin_whitelist_networks: "{{ haproxy_whitelist_networks }}"
-haproxy_nova_metadata_whitelist_networks: "{{ haproxy_whitelist_networks }}"
-haproxy_rabbitmq_management_whitelist_networks: "{{ haproxy_whitelist_networks }}"
-haproxy_repo_git_whitelist_networks: "{{ haproxy_whitelist_networks }}"
-haproxy_repo_cache_whitelist_networks: "{{ haproxy_whitelist_networks }}"
-haproxy_opendaylight_whitelist_networks: "{{ haproxy_whitelist_networks }}"
+# To disable security headers set to []
+haproxy_security_headers:
+  - "http-response set-header Strict-Transport-Security \"max-age={{ haproxy_security_headers_max_age }}; includeSubDomains;\""
+  - 'http-response set-header X-Content-Type-Options "nosniff"'
+  - 'http-response set-header Referrer-Policy "same-origin"'
+  - 'http-response set-header Permissions-Policy "accelerometer=(), autoplay=(), camera=(), cross-origin-isolated=(), display-capture=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), sync-xhr=(), usb=(), xr-spatial-tracking=(), clipboard-read=(self), clipboard-write=(self), gamepad=()"'
+
+haproxy_security_txt_service:
+  haproxy_backend_only: true
+  haproxy_service_name: security_txt
+  haproxy_backend_nodes: []
+  haproxy_balance_type: http
+  haproxy_service_enabled: "{{ haproxy_security_txt_content is truthy }}"
+  # https://sleeplessbeastie.eu/2020/05/11/how-to-serve-single-file-using-haproxy/
+  haproxy_backend_arguments:
+    - 'errorfile 503 /etc/haproxy/security.txt'
+  haproxy_map_entries:
+    - name: base_regex
+      entries:
+        - '.*/security.txt security_txt-back'
+
+# haproxy 'base' frontend-only service that is used always deployed for port 80 redirect and 443
+# this potentially supports horizon dashboard, security.txt and certbot
+# plus any other user defined custom backend
+haproxy_base_service:
+  haproxy_service_name: base
+  haproxy_frontend_only: true
+  haproxy_ssl: "{{ haproxy_ssl }}"
+  haproxy_ssl_all_vips: true
+  haproxy_port: "{{ haproxy_ssl | ternary(443,80) }}"
+  haproxy_redirect_http_port: 80
+  haproxy_balance_type: http
+  haproxy_service_enabled: true
+  haproxy_redirect_scheme: "{{ (haproxy_ssl_letsencrypt_enable | bool and haproxy_ssl | bool) | ternary('https if !{ ssl_fc } !{ path_beg /.well-known/acme-challenge/ }', 'https if !{ ssl_fc }') }}"
+  haproxy_frontend_acls: "{{ (haproxy_ssl_letsencrypt_enable | bool and haproxy_ssl | bool) | ternary(haproxy_ssl_letsencrypt_acl, {}) }}"
+  haproxy_frontend_raw: >-
+    {{
+      (haproxy_ssl | bool and haproxy_security_headers is defined) | ternary(
+        haproxy_security_headers + [ haproxy_horizon_csp | default(haproxy_security_headers_csp)] + [haproxy_skyline_csp | default('')],
+        [])
+    }}
+  haproxy_maps:
+    - 'use_backend %[path,map_reg(/etc/haproxy/base_regex.map)]'
+  haproxy_map_entries:
+    - name: base_regex
+      entries:
+        - "#Regular expression map file - this comment is defined in the base frontend config"
+
+# Handles LetsEncrypt HTTP-01 challenge
+haproxy_letsencrypt_service:
+  haproxy_service_name: letsencrypt
+  haproxy_backend_nodes: "{{ groups['haproxy_all'] }}"
+  backend_rise: 1
+  backend_fall: 5
+  interval: 4000
+  haproxy_bind:
+    - 127.0.0.1
+  haproxy_port: "{{ haproxy_ssl_letsencrypt_certbot_backend_port }}"
+  haproxy_balance_type: http
+  haproxy_service_enabled: "{{ (haproxy_ssl_letsencrypt_enable | bool and haproxy_ssl | bool) }}"
+
+# RGW backend is defined here as it might be referring to an external ceph cluster via 'ceph_rgws'
+haproxy_ceph_rgw_service:
+  haproxy_service_name: ceph-rgw
+  haproxy_backend_nodes: "{{ (groups['ceph-rgw'] is defined and groups['ceph-rgw'] | length > 0) | ternary(groups['ceph-rgw'], ceph_rgws) }}"
+  haproxy_ssl: "{{ haproxy_ssl }}"
+  haproxy_ssl_all_vips: "{{ haproxy_ssl_all_vips }}"
+  haproxy_balance_alg: source
+  haproxy_port: "{{ radosgw_service_port | default(7980) }}"
+  haproxy_balance_type: http
+  haproxy_backend_httpcheck_options:
+    - send meth HEAD
+    - expect rstatus 200|405
+  # `openstack_service_backend_ssl` is not taken into account if ceph is installed independently.
+  haproxy_backend_ssl: "{{ ceph_rgw_backend_ssl | default((groups['ceph-rgw'] is defined and groups['ceph-rgw'] | length > 0) | ternary(openstack_service_backend_ssl, False)) }}"
+  haproxy_backend_ca: "{{ ceph_rgw_haproxy_backend_ca | default(openstack_haproxy_backend_ca) }}"
+  haproxy_accept_both_protocols: "{{ ceph_rgw_accept_both_protocols | default(openstack_service_accept_both_protocols) }}"
+  haproxy_service_enabled: "{{ (groups['ceph-rgw'] is defined and groups['ceph-rgw'] | length > 0) or (ceph_rgws | length > 0) }}"
 
 haproxy_default_services:
-  - service:
-      haproxy_service_name: galera
-      haproxy_backend_nodes: "{{ (groups['galera_all'] | default([]))[:1] }}"  # list expected
-      haproxy_backup_nodes: "{{ (groups['galera_all'] | default([]))[1:] }}"
-      haproxy_bind: "{{ [internal_lb_vip_address] }}"
-      haproxy_port: 3306
-      haproxy_check_port: 9200
-      haproxy_balance_type: tcp
-      haproxy_timeout_client: 5000s
-      haproxy_timeout_server: 5000s
-      haproxy_backend_options:
-        - "httpchk HEAD / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_whitelist_networks: "{{ haproxy_galera_whitelist_networks }}"
-      haproxy_service_enabled: "{{ groups['galera_all'] is defined and groups['galera_all'] | length > 0 }}"
-  - service:
-      haproxy_service_name: repo_git
-      haproxy_backend_nodes: "{{ groups['repo_all'] | default([]) }}"
-      haproxy_bind: "{{ [internal_lb_vip_address] }}"
-      haproxy_port: 9418
-      haproxy_balance_type: tcp
-      haproxy_backend_options:
-        - tcp-check
-      haproxy_whitelist_networks: "{{ haproxy_repo_git_whitelist_networks }}"
-      haproxy_service_enabled: "{{ groups['repo_all'] is defined and groups['repo_all'] | length > 0 }}"
-  - service:
-      haproxy_service_name: repo_all
-      haproxy_backend_nodes: "{{ groups['repo_all'] | default([]) }}"
-      haproxy_bind: "{{ [internal_lb_vip_address] }}"
-      haproxy_port: 8181
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk HEAD / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['repo_all'] is defined and groups['repo_all'] | length > 0 }}"
-  - service:
-      haproxy_service_name: glance_api
-      haproxy_backend_nodes: "{{ groups['glance_api'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 9292
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['glance_api'] is defined and groups['glance_api'] | length > 0 }}"
-  - service:
-      haproxy_service_name: glance_registry
-      haproxy_backend_nodes: "{{ groups['glance_registry'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 9191
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_whitelist_networks: "{{ haproxy_glance_registry_whitelist_networks }}"
-      haproxy_service_enabled: >-
-        {{ groups['glance_registry'] is defined and
-           groups['glance_registry'] | length > 0 and
-           (glance_enable_v2_registry | default(False)) | bool and
-           (glance_enable_v1_api | default(False)) | bool }}
-  - service:
-      haproxy_service_name: gnocchi
-      haproxy_backend_nodes: "{{ groups['gnocchi_all'] | default([]) }}"
-      haproxy_port: 8041
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET /healthcheck HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['gnocchi_all'] is defined and groups['gnocchi_all'] | length > 0 }}"
-  - service:
-      haproxy_service_name: heat_api_cfn
-      haproxy_backend_nodes: "{{ groups['heat_api_cfn'] | default([]) }}"
-      haproxy_port: 8000
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk HEAD / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['heat_api_cfn'] is defined and groups['heat_api_cfn'] | length > 0 }}"
-  - service:
-      haproxy_service_name: heat_api
-      haproxy_backend_nodes: "{{ groups['heat_api'] | default([]) }}"
-      haproxy_port: 8004
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk HEAD / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['heat_api'] is defined and groups['heat_api'] | length > 0 }}"
-  - service:
-      haproxy_service_name: keystone_service
-      haproxy_backend_nodes: "{{ groups['keystone_all'] | default([])  }}"
-      haproxy_port: 5000
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_balance_type: "http"
-      haproxy_backend_options:
-        - "httpchk HEAD / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['keystone_all'] is defined and groups['keystone_all'] | length > 0 }}"
-  - service:
-      haproxy_service_name: neutron_server
-      haproxy_backend_nodes: "{{ groups['neutron_server'] | default([]) }}"
-      haproxy_port: 9696
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['neutron_server'] is defined and groups['neutron_server'] | length > 0 }}"
-  - service:
-      haproxy_service_name: nova_api_metadata
-      haproxy_backend_nodes: "{{ groups['nova_api_metadata'] | default([]) }}"
-      haproxy_bind: "{{ [internal_lb_vip_address] }}"
-      haproxy_port: 8775
-      haproxy_ssl: False
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk HEAD / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_whitelist_networks: "{{ haproxy_nova_metadata_whitelist_networks }}"
-      haproxy_service_enabled: "{{ groups['nova_api_metadata'] is defined and groups['nova_api_metadata'] | length > 0 }}"
-  - service:
-      haproxy_service_name: nova_api_os_compute
-      haproxy_backend_nodes: "{{ groups['nova_api_os_compute'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 8774
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk HEAD / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['nova_api_os_compute'] is defined and groups['nova_api_os_compute'] | length > 0 }}"
-  - service:
-      haproxy_service_name: placement
-      haproxy_backend_nodes: "{{ groups['placement_all'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 8780
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['placement_all'] is defined and groups['placement_all'] | length > 0 }}"
-  - service:
-      haproxy_service_name: nova_api_placement
-      state: absent
-  - service:
-      haproxy_service_name: nova_console
-      haproxy_backend_nodes: "{{ groups['nova_console'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: "{{ hostvars[(groups['nova_console'] | default(['localhost']))[0] | default('localhost')]['nova_console_port'] | default(6082) }}"
-      haproxy_balance_type: http
-      haproxy_timeout_client: 60m
-      haproxy_timeout_server: 60m
-      haproxy_balance_alg: source
-      haproxy_backend_options:
-        - "httpchk HEAD {{ hostvars[(groups['nova_console'] | default(['localhost']))[0] | default('localhost')]['nova_console_path'] | default('/spice_auto.html') }} HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_backend_httpcheck_options:
-        - "expect status 200"
-      haproxy_service_enabled: "{{ groups['nova_console'] is defined and groups['nova_console'] | length > 0 }}"
-  - service:
-      haproxy_service_name: cinder_api
-      haproxy_backend_nodes: "{{ groups['cinder_api'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 8776
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk HEAD / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['cinder_api'] is defined and groups['cinder_api'] | length > 0 }}"
-  - service:
-      haproxy_service_name: horizon
-      haproxy_backend_nodes: "{{ groups['horizon_all'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_ssl_all_vips: true
-      haproxy_port: "{{ haproxy_ssl | ternary(443,80) }}"
-      haproxy_backend_port: 80
-      haproxy_redirect_http_port: 80
-      haproxy_balance_type: http
-      haproxy_balance_alg: source
-      haproxy_backend_options:
-        - "httpchk HEAD / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['horizon_all'] is defined and groups['horizon_all'] | length > 0 }}"
-  - service:
-      haproxy_service_name: sahara_api
-      haproxy_backend_nodes: "{{ groups['sahara_api'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_balance_alg: source
-      haproxy_port: 8386
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET /healthcheck HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['sahara_api'] is defined and groups['sahara_api'] | length > 0 }}"
-  - service:
-      haproxy_service_name: swift_proxy
-      haproxy_backend_nodes: "{{ groups['swift_proxy'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_balance_alg: source
-      haproxy_port: 8080
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET /healthcheck HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['swift_proxy'] is defined and groups['swift_proxy'] | length > 0 }}"
-  - service:
-      haproxy_service_name: aodh_api
-      haproxy_backend_nodes: "{{ groups['aodh_api'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 8042
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk HEAD / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['aodh_api'] is defined and groups['aodh_api'] | length > 0 }}"
-  - service:
-      haproxy_service_name: ironic_api
-      haproxy_backend_nodes: "{{ groups['ironic_api'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 6385
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['ironic_api'] is defined and groups['ironic_api'] | length > 0 }}"
-  - service:
-      haproxy_service_name: ironic_inspector
-      haproxy_backend_nodes: "{{ groups['ironic_inspector'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 5050
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['ironic_inspector'] is defined and groups['ironic_inspector'] | length > 0 }}"
-  - service:
-      haproxy_service_name: rabbitmq_mgmt
-      haproxy_backend_nodes: "{{ groups['rabbitmq'] | default([]) }}"
-      haproxy_ssl: False
-      haproxy_bind: "{{ [internal_lb_vip_address] }}"
-      haproxy_port: 15672
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk HEAD / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_whitelist_networks: "{{ haproxy_rabbitmq_management_whitelist_networks }}"
-      haproxy_service_enabled: "{{ groups['rabbitmq'] is defined and groups['rabbitmq'] | length > 0 }}"
-  - service:
-      haproxy_service_name: magnum
-      haproxy_backend_nodes: "{{ groups['magnum_all'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 9511
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['magnum_all'] is defined and groups['magnum_all'] | length > 0 }}"
-  - service:
-      haproxy_service_name: manila
-      haproxy_backend_nodes: "{{ groups['manila_all'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 8786
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk HEAD / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['manila_all'] is defined and groups['manila_all'] | length > 0 }}"
-  - service:
-      haproxy_service_name: masakari_api
-      haproxy_backend_nodes: "{{ groups['masakari_api'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 15868
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['masakari_api'] is defined and groups['masakari_api'] | length > 0 }}"
-  - service:
-      haproxy_service_name: mistral
-      haproxy_backend_nodes: "{{ groups['mistral_all'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 8989
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['mistral_all'] is defined and groups['mistral_all'] | length > 0 }}"
-  - service:
-      haproxy_service_name: murano
-      haproxy_backend_nodes: "{{ groups['murano_all'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 8082
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET /v1 HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_backend_httpcheck_options:
-        - "expect status 401"
-      haproxy_service_enabled: "{{ groups['murano_all'] is defined and groups['murano_all'] | length > 0 }}"
-  - service:
-      haproxy_service_name: trove
-      haproxy_backend_nodes: "{{ groups['trove_api'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 8779
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk HEAD / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['trove_api'] is defined and groups['trove_api'] | length > 0 }}"
-  - service:
-      haproxy_service_name: barbican
-      haproxy_backend_nodes: "{{ groups['barbican_api'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 9311
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['barbican_api'] is defined and groups['barbican_api'] | length > 0 }}"
-  - service:
-      haproxy_service_name: designate_api
-      haproxy_backend_nodes: "{{ groups['designate_api'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 9001
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "forwardfor"
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-        - "httplog"
-      haproxy_service_enabled: "{{ groups['designate_api'] is defined and groups['designate_api'] | length > 0 }}"
-  - service:
-      haproxy_service_name: octavia
-      haproxy_backend_nodes: "{{ groups['octavia_all'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 9876
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-      haproxy_service_enabled: "{{ groups['octavia_all'] is defined and groups['octavia_all'] | length > 0 }}"
-  - service:
-      haproxy_service_name: tacker
-      haproxy_backend_nodes: "{{ groups['tacker_all'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 9890
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "forwardfor"
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-        - "httplog"
-      haproxy_service_enabled: "{{ groups['tacker_all'] is defined and groups['tacker_all'] | length > 0 }}"
-  - service:
-      haproxy_service_name: opendaylight-neutron
-      haproxy_backend_nodes: "{{ groups['neutron_server'] | default([]) }}"
-      haproxy_bind: "{{ [internal_lb_vip_address] }}"
-      haproxy_port: 8180
-      haproxy_balance_type: tcp
-      haproxy_timeout_client: 5000s
-      haproxy_timeout_server: 5000s
-      haproxy_whitelist_networks: "{{ haproxy_opendaylight_whitelist_networks }}"
-      haproxy_service_enabled: "{{ neutron_plugin_type == 'ml2.opendaylight' }}"
-  - service:
-      haproxy_service_name: opendaylight-websocket
-      haproxy_backend_nodes: "{{ groups['neutron_server'] | default([]) }}"
-      haproxy_bind: "{{ [internal_lb_vip_address] }}"
-      haproxy_port: 8185
-      haproxy_balance_type: tcp
-      haproxy_timeout_client: 5000s
-      haproxy_timeout_server: 5000s
-      haproxy_whitelist_networks: "{{ haproxy_opendaylight_whitelist_networks }}"
-      haproxy_service_enabled: "{{ neutron_plugin_type == 'ml2.opendaylight' }}"
-  - service:
-      haproxy_service_name: ceph-rgw
-      haproxy_backend_nodes: "{{ (groups['ceph-rgw'] is defined and groups['ceph-rgw'] | length > 0) | ternary(groups['ceph-rgw'], ceph_rgws) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_balance_alg: source
-      haproxy_port: "{{ radosgw_service_port | default(7980) }}"
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - httpchk HEAD /
-      haproxy_backend_httpcheck_options:
-        - expect rstatus 200|405
-      haproxy_service_enabled: "{{ (groups['ceph-rgw'] is defined and groups['ceph-rgw'] | length > 0) or (ceph_rgws | length > 0) }}"
-  - service:
-      haproxy_service_name: neutron_ovn_northd_northbound
-      haproxy_backend_nodes: "{{ (groups['neutron_ovn_northd'] | default([]))[:1] }}" # list expected
-      haproxy_backup_nodes: "{{ (groups['neutron_ovn_northd'] | default([]))[1:] }}"
-      haproxy_port: 6641
-      haproxy_bind: "{{ [internal_lb_vip_address] }}"
-      haproxy_balance_type: tcp
-      haproxy_timeout_client: 90m
-      haproxy_timeout_server: 90m
-      haproxy_backend_options:
-        - tcpka
-      haproxy_service_enabled: "{{ (neutron_plugin_type == 'ml2.ovn') and (groups['neutron_ovn_northd'] is defined and groups['neutron_ovn_northd'] | length > 0) }}"
-  - service:
-      haproxy_service_name: neutron_ovn_northd_southbound
-      haproxy_backend_nodes: "{{ (groups['neutron_ovn_northd'] | default([]))[:1] }}"
-      haproxy_backup_nodes: "{{ (groups['neutron_ovn_northd'] | default([]))[1:] }}"
-      haproxy_port: 6642
-      haproxy_bind: "{{ [internal_lb_vip_address] }}"
-      haproxy_balance_type: tcp
-      haproxy_timeout_client: 90m
-      haproxy_timeout_server: 90m
-      haproxy_backend_options:
-        - tcpka
-      haproxy_service_enabled: "{{ (neutron_plugin_type == 'ml2.ovn') and (groups['neutron_ovn_northd'] is defined and groups['neutron_ovn_northd'] | length > 0) }}"
-  - service:
-      haproxy_service_name: neutron_ovn_ovsdb_server
-      haproxy_backend_nodes: "{{ (groups['neutron_ovn_northd'] | default([]))[:1] }}"
-      haproxy_backup_nodes: "{{ (groups['neutron_ovn_northd'] | default([]))[1:] }}"
-      haproxy_port: 6640
-      haproxy_bind: "{{ [internal_lb_vip_address] }}"
-      haproxy_balance_type: tcp
-      haproxy_timeout_client: 90m
-      haproxy_timeout_server: 90m
-      haproxy_backend_options:
-        - tcpka
-      haproxy_service_enabled: "{{ (neutron_plugin_type == 'ml2.ovn') and (groups['neutron_ovn_northd'] is defined and groups['neutron_ovn_northd'] | length > 0) }}"
-  - service:
-      haproxy_service_name: panko_api
-      haproxy_backend_nodes: "{{ groups['panko_api'] | default([]) }}"
-      haproxy_ssl: "{{ haproxy_ssl }}"
-      haproxy_port: 8777
-      haproxy_balance_type: http
-      haproxy_backend_options:
-        - "forwardfor"
-        - "httpchk GET / HTTP/1.0\\r\\nUser-agent:\\ osa-haproxy-healthcheck"
-        - "httplog"
-      haproxy_service_enabled: "{{ groups['panko_all'] is defined and groups['panko_all'] | length > 0 }}"
+  - "{{ haproxy_security_txt_service | combine(haproxy_security_txt_service_overrides | default({})) }}"
+  - "{{ haproxy_base_service | combine(haproxy_base_service_overrides | default({})) }}"
+  - "{{ haproxy_letsencrypt_service | combine(haproxy_letsencrypt_service_overrides | default({})) }}"
+  - "{{ haproxy_ceph_rgw_service | combine(haproxy_ceph_rgw_service_overrides | default({})) }}"
+
+# ensure correct facts are gathered in haproxy play
+# to determine the network gateway to use in keepalived track script
+deployment_extra_facts_filter:
+  - "ansible_processor_*"
+  - ansible_default_ipv4
+deployment_extra_facts_subset:
+  - '!all'
+  - hardware
+  - network

@@ -10,38 +10,74 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-tempest_plugins:
-  - name: manila-tempest-plugin
-    repo: https://opendev.org/openstack/manila-tempest-plugin
-    branch: master
+tempest_flavors:
+  - name: tempest1
+    id: 201
+    ram: 256
+    disk: 1
+    vcpus: 1
+  - name: tempest2
+    id: 202
+    ram: 512
+    disk: 1
+    vcpus: 1
+  - name: manila-service-flavor
+    id: 100
+    ram: 350
+    disk: 5
+    vcpus: 1
 
-tempest_test_whitelist:
-  - manila_tempest_tests.tests.scenario.test_share_basic_ops
+tempest_test_includelist_ceph_manila:
+  - manila_tempest_tests.tests.scenario.test_share_basic_ops.TestShareBasicOpsNFS.test_mount_share_one_vm
 
-tempest_tempest_conf_overrides:
+tempest_tempest_conf_overrides_manila:
   share:
+    # The first version of manila api which supports microversions
+    min_api_microversion: "2.0"
+    # Set this to the highest microversion supported by the openstack release
+    max_api_microversion: "2.67"
+    run_consistency_group_tests: false
+    run_snapshot_tests: false
+    capability_snapshot_support: true
+    multitenancy_enabled: false
+    run_shrink_tests: true
+    run_extend_tests: true
+    multi_backend: false
+    enable_protocols: nfs
+    run_ipv6_tests: false
+    share_creation_retry_number: 2
+    suppress_errors_in_cleanup: true
+    capability_storage_protocol: NFS
+    enable_ip_rules_for_protocols: nfs
     image_with_share_tools: manila-service-image
     image_password: manila
-    enable_protocols: nfs
-    enable_ip_rules_for_protocols: nfs
-    enable_ro_access_level_for_protocols: nfs
-    suppress_errors_in_cleanup: true
-    share_creation_retry_number: 3
-    run_ipv6_tests: False
+    endpoint_type: internalURL
+
+tempest_images:
+  - url: "https://download.cirros-cloud.net/0.6.3/cirros-0.6.3-x86_64-disk.img"
+    checksum: "87617e24a5e30cb3b87fda8c0764838f"
+    format: "qcow2"
+    name: "cirros"
+    visibility: community
+    tags:
+      - managed_by_tempest
+  - url: "https://tarballs.opendev.org/openstack/manila-image-elements/images/manila-service-image-master.qcow2"
+    format: "qcow2"
+    name: "manila-service-image"
+    visibility: public
+
+nova_console_type: disabled
 
 manila_backends:
-  nfs-share1:
-    share_backend_name: NFS_SHARE1
-    share_driver: manila.share.drivers.lvm.LVMShareDriver
-    driver_handles_share_servers: False
-    lvm_share_volume_group: manila-shares
-    lvm_share_export_ips: 172.29.244.100
-  generic:
-    share_backend_name: GENERIC
-    share_driver: manila.share.drivers.generic.GenericShareDriver
-    driver_handles_share_servers: True
-    service_instance_flavor_id: 100
-    service_image_name: manila-service-image
-    service_instance_user: manila
-    service_instance_password: manila
-    interface_driver: manila.network.linux.interface.BridgeInterfaceDriver
+  cephfsnfs1:
+    cephfs_auth_id: manila
+    cephfs_cluster_name: ceph
+    cephfs_conf_path: /etc/ceph/ceph.conf
+    cephfs_ganesha_server_ip: {{ bootstrap_host_management_address }}
+    cephfs_ganesha_server_is_remote: false
+    cephfs_protocol_helper_type: NFS
+    driver_handles_share_servers: false
+    share_backend_name: CEPHFSNFS1
+    share_driver: manila.share.drivers.cephfs.driver.CephFSDriver
+    ganesha_rados_store_enable: false
+    ganesha_rados_store_pool_name: manila_data

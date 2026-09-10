@@ -17,16 +17,22 @@
 openstack_release: "{{ lookup('env', 'OSA_VERSION') | default('undefined', true) }}"
 
 ## OpenStack Configuration directory
-openstack_config_dir: "{{ lookup('env', 'OSA_CONFIG_DIR') | default('/etc/openstack_deploy') }}"
+openstack_config_dir: "{{ lookup('env', 'OSA_CONFIG_DIR') | default('/etc/openstack_deploy', true) }}"
 
 ## OpenStack Clone directory
 openstack_clone_root: "{{ (lookup('env', 'OSA_CLONE_ROOT') | default('/opt/openstack-ansible', true)) }}"
 
+## OpenDev base URL
+openstack_opendev_base_url: https://opendev.org
+
+## Github base URL
+openstack_github_base_url: https://github.com
+
 ## OpenStack service python version
 openstack_venv_python_executable: "python3"
 
-#uwsgi venv deploys the same python version as OpenStack service venv
-uwsgi_python_executable: "{{ openstack_venv_python_executable }}"
+## Define default EPEL location
+centos_epel_mirror: https://dl.fedoraproject.org/pub/epel
 
 ## Verbosity Options
 debug: False
@@ -34,43 +40,27 @@ debug: False
 ## SSH connection wait time
 ssh_delay: 5
 
-# Set the package install state for distribution packages
-# Options are 'present' and 'latest'.
-# NOTE(mhayden): Allowing CentOS 7 and openSUSE to use package_state=present should give
-# gate jobs a better chance to finish and expose more issues to fix.
-package_state: "{{ (ansible_pkg_mgr in ['dnf', 'yum', 'zypper']) | ternary('present', 'latest') }}"
+openstack_service_bind_address: "{{ management_address }}"
+
+package_state: "present"
 
 # Set "/var/log" to be a bind mount to the physical host.
 default_bind_mount_logs: true
 
 # Set distro variable
-# NOTE(hwoarang): ansible_distribution may return a string with spaces
+# NOTE(hwoarang): ansible_facts['distribution'] may return a string with spaces
 # such as "openSUSE Leap" so we need to replace the space with underscore
 # in order to create a more sensible repo name for the distro.
-os_distro_version: "{{ (ansible_distribution | lower) | replace(' ', '_') }}-{{ ansible_distribution_version.split('.')[:2] | join('.') }}-{{ ansible_architecture | lower }}"
+os_distro_version: "{{ (ansible_facts['distribution'] | lower) | replace(' ', '_') }}-{{ ansible_facts['distribution_version'].split('.')[:2] | join('.') }}-{{ ansible_facts['architecture'] | lower }}"
 
-# Set the systemd prefix based on the base OS.
-systemd_utils_distro_prefix:
-  apt: "/lib/systemd"
-  yum: "/lib/systemd"
-  dnf: "/lib/systemd"
-  zypper: "/usr/lib/systemd"
-
-systemd_utils_prefix: "{{ systemd_utils_distro_prefix[ansible_pkg_mgr] }}"
-
-# Ensure that the package state matches the global setting
-rsyslog_client_package_state: "{{ package_state }}"
-# At this time there's no suitable package available for systemd-journal-remote/gateway
-# When installing on SUSE 42.x. For now this playbook will omit suse when the package
-# manager is "zypper". When a suitable package is available on SUSE this should be removed.
-rsyslog_client_enabled: "{{ ansible_pkg_mgr == 'zypper' }}"
-rsyslog_server_enabled: "{{ ansible_pkg_mgr == 'zypper' }}"
+openstack_lock_dir: "/run/lock"
 
 # URL for the frozen internal openstack repo.
 repo_server_port: 8181
 
 ## Default installation method for OpenStack services
 install_method: "source"
+service_install_method: "{{ install_method }}"
 
 ## DNS resolution (resolvconf) options
 #Group containing resolvers to configure
@@ -81,6 +71,13 @@ openstack_host_manage_hosts_file: "{{ groups['unbound'] is not defined or groups
 
 ## Enable external SSL handling for general OpenStack services
 openstack_external_ssl: true
+
+## Control whether traffic between haproxy and service backends should
+## be encrypted.
+openstack_service_backend_ssl: False
+
+## Allows haproxy frontend to accept both HTTP and HTTPS traffic.
+openstack_service_accept_both_protocols: False
 
 ## OpenStack global Endpoint Protos
 openstack_service_publicuri_proto: https
@@ -104,10 +101,6 @@ service_ldap_backend_enabled: "{{ keystone_ldap is defined and keystone_ldap.Def
 ## Base venv configuration
 venv_tag: "{{ openstack_release }}"
 
-## Gnocchi
-# Used in both Gnocchi and Swift roles.
-gnocchi_service_project_name: "{{ (gnocchi_storage_driver is defined and gnocchi_storage_driver == 'swift') | ternary('gnocchi_swift', 'service') }}"
-
 ## OpenStack Openrc
 openrc_os_auth_url: "{{ keystone_service_internalurl }}"
 openrc_os_password: "{{ keystone_auth_admin_password }}"
@@ -123,7 +116,7 @@ openrc_region_name: "{{ service_region }}"
 apply_security_hardening: true
 
 ## Ansible ssh configuration
-ansible_ssh_extra_args: >
+ansible_ssh_extra_args: >-
   -o UserKnownHostsFile=/dev/null
   -o StrictHostKeyChecking=no
   -o ServerAliveInterval=64
@@ -145,3 +138,18 @@ _global_pins_file_path: "{{ openstack_clone_root }}/global-requirement-pins.txt"
 
 venv_build_global_constraints: >-
   {{ lookup('file', _global_pins_file_path).splitlines() | reject('match','^#.*$') | reject('equalto', '') | list }}
+
+deployment_extra_facts_subset: hardware
+deployment_extra_facts_filter: ansible_processor_*
+
+# Set permissions for repo server and files built on it
+_repo_service_user_mapping:
+  debian: www-data
+  redhat: apache
+repo_service_user_name: "{{ _repo_service_user_mapping[ansible_facts['os_family'] | lower] }}"
+repo_service_group_name: "{{ _repo_service_user_mapping[ansible_facts['os_family'] | lower] }}"
+venv_build_host_user_name: "{{ repo_service_user_name }}"
+venv_build_host_group_name: "{{ repo_service_group_name }}"
+
+# Set RabbitMQ management UI to use TLS
+rabbitmq_management_ssl: "{{ haproxy_ssl }}"

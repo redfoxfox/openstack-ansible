@@ -13,30 +13,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-- name: Install blazar components
-  hosts: blazar_all
-  gather_facts: "{{ osa_gather_facts | default(True) }}"
-  environment: "{{ deployment_environment_variables | default({}) }}"
-  user: root
-  vars_files:
-    - "defaults/repo_packages/openstack_services.yml"
-    - "defaults/{{ install_method }}_install.yml"
-  tags:
-    - blazar
-  pre_tasks:
-    - include_tasks: "common-tasks/os-{{ container_tech | default('lxc') }}-container-setup.yml"
-      when: not is_metal
-
-    - include_tasks: common-tasks/unbound-clients.yml
-      when:
-        - hostvars['localhost']['resolvconf_enabled'] | bool
-
-    - name: Configure package proxy cache
-      include_tasks: common-tasks/package-cache-proxy.yml
-      when: install_method == "source"
-
-  roles:
-    - role: "os_blazar"
-    - role: "system_crontab_coordination"
-      tags:
-        - crontab
+- name: Importing blazar playbook
+  import_playbook: openstack.osa.blazar

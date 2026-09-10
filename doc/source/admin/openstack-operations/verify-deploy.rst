@@ -1,4 +1,4 @@
-Check your OpenStack-Ansible cloud
+Check your OpenStack-Ansible Cloud
 ==================================
 
 This chapter goes through the verification steps for a basic operation of
@@ -15,7 +15,7 @@ the OpenStack API and dashboard, as an administrator.
 
       $ lxc-attach -n `lxc-ls -1 | grep utility | head -n 1`
 
-#. Source the ``admin`` tenant credentials:
+#. Source the ``admin`` project credentials:
 
    .. code::
 
@@ -45,9 +45,10 @@ the OpenStack API and dashboard, as an administrator.
       +----------------------------------+--------------------+
 
 #. With a web browser, access the Dashboard using the external load
-   balancer IP address. This is defined by the ``external_lb_vip_address``
-   option in the ``/etc/openstack_deploy/openstack_user_config.yml``
-   file. The dashboard uses HTTPS on port 443.
+   balancer domain name or IP address. This is defined by the
+   ``external_lb_vip_address`` option in the
+   ``/etc/openstack_deploy/openstack_user_config.yml`` file.
+   The dashboard uses HTTPS on port 443.
 
 #. Authenticate using the username ``admin`` and password defined by
    the ``keystone_auth_admin_password`` option in the
@@ -62,45 +63,42 @@ the OpenStack API and dashboard, as an administrator.
       +----------------+-----------+--------------+----------------+---------+-----------+---------------------------------------------------+
       | ID             | Region    | Service Name | Service Type   | Enabled | Interface | URL                                               |
       +----------------+-----------+--------------+----------------+---------+-----------+---------------------------------------------------+
-      | [ID truncated] | RegionOne | cinderv2     | volumev2       | True    | admin     | http://172.29.236.100:8776/v2/%(project_id)s      |
-      | [ID truncated] | RegionOne | cinder       | volume         | True    | public    | https://10.23.100.127:8776/v1/%(project_id)s      |
-      | [ID truncated] | RegionOne | aodh         | alarming       | True    | internal  | http://172.29.236.100:8042                        |
+      | [ID truncated] | RegionOne | cinder       | block-storage  | True    | internal  | http://172.29.236.100:8776/v3                     |
+      | [ID truncated] | RegionOne | cinder       | block-storage  | True    | admin     | http://172.29.236.100:8776/v3                     |
+      | [ID truncated] | RegionOne | cinder       | block-storage  | True    | public    | https://10.23.100.127:8776/v3                     |
+      | [ID truncated] | RegionOne | nova         | compute        | True    | internal  | http://172.29.236.100:8774/v2.1                   |
+      | [ID truncated] | RegionOne | nova         | compute        | True    | admin     | http://172.29.236.100:8774/v2.1                   |
+      | [ID truncated] | RegionOne | nova         | compute        | True    | public    | https://10.23.100.127:8774/v2.1                   |
+      | [ID truncated] | RegionOne | keystone     | identity       | True    | internal  | http://172.29.236.100:5000/v3                     |
+      | [ID truncated] | RegionOne | keystone     | identity       | True    | admin     | http://172.29.236.100:5000/v3                     |
+      | [ID truncated] | RegionOne | keystone     | identity       | True    | public    | https://10.23.100.127:5000/v3                     |
+      | [ID truncated] | RegionOne | placement    | placement      | True    | internal  | http://172.29.236.100:8780                        |
+      | [ID truncated] | RegionOne | placement    | placement      | True    | admin     | http://172.29.236.100:8780                        |
+      | [ID truncated] | RegionOne | placement    | placement      | True    | public    | https://10.23.100.127:8780                        |
+      | [ID truncated] | RegionOne | glance       | image          | True    | internal  | http://172.29.236.100:9292                        |
+      | [ID truncated] | RegionOne | glance       | image          | True    | admin     | http://172.29.236.100:9292                        |
       | [ID truncated] | RegionOne | glance       | image          | True    | public    | https://10.23.100.127:9292                        |
-      | [ID truncated] | RegionOne | cinderv2     | volumev2       | True    | internal  | http://172.29.236.100:8776/v2/%(project_id)s      |
-      | [ID truncated] | RegionOne | heat-cfn     | cloudformation | True    | admin     | http://172.29.236.100:8000/v1                     |
+      | [ID truncated] | RegionOne | neutron      | network        | True    | internal  | http://172.29.236.100:9696                        |
       | [ID truncated] | RegionOne | neutron      | network        | True    | admin     | http://172.29.236.100:9696                        |
+      | [ID truncated] | RegionOne | neutron      | network        | True    | public    | https://10.23.100.127:9696                        |
+      | [ID truncated] | RegionOne | aodh         | alarming       | True    | internal  | http://172.29.236.100:8042                        |
+      | [ID truncated] | RegionOne | heat-cfn     | cloudformation | True    | admin     | http://172.29.236.100:8000/v1                     |
       | [ID truncated] | RegionOne | aodh         | alarming       | True    | public    | https://10.23.100.127:8042                        |
-      | [ID truncated] | RegionOne | nova         | compute        | True    | admin     | http://172.29.236.100:8774/v2.1/%(project_id)s    |
       | [ID truncated] | RegionOne | heat-cfn     | cloudformation | True    | internal  | http://172.29.236.100:8000/v1                     |
       | [ID truncated] | RegionOne | swift        | object-store   | True    | public    | https://10.23.100.127:8080/v1/AUTH_%(project_id)s |
       | [ID truncated] | RegionOne | designate    | dns            | True    | admin     | http://172.29.236.100:9001                        |
-      | [ID truncated] | RegionOne | cinderv2     | volumev2       | True    | public    | https://10.23.100.127:8776/v2/%(project_id)s      |
-      | [ID truncated] | RegionOne | keystone     | identity       | True    | admin     | http://172.29.236.100:5000/v3                     |
-      | [ID truncated] | RegionOne | ceilometer   | metering       | True    | admin     | http://172.29.236.100:8777/                       |
-      | [ID truncated] | RegionOne | nova         | compute        | True    | public    | https://10.23.100.127:8774/v2.1/%(project_id)s    |
-      | [ID truncated] | RegionOne | keystone     | identity       | True    | internal  | http://172.29.236.100:5000/v3                     |
-      | [ID truncated] | RegionOne | nova         | compute        | True    | internal  | http://172.29.236.100:8774/v2.1/%(project_id)s    |
       | [ID truncated] | RegionOne | gnocchi      | metric         | True    | public    | https://10.23.100.127:8041                        |
-      | [ID truncated] | RegionOne | neutron      | network        | True    | internal  | http://172.29.236.100:9696                        |
       | [ID truncated] | RegionOne | aodh         | alarming       | True    | admin     | http://172.29.236.100:8042                        |
       | [ID truncated] | RegionOne | heat         | orchestration  | True    | admin     | http://172.29.236.100:8004/v1/%(project_id)s      |
-      | [ID truncated] | RegionOne | glance       | image          | True    | internal  | http://172.29.236.100:9292                        |
       | [ID truncated] | RegionOne | designate    | dns            | True    | internal  | http://172.29.236.100:9001                        |
-      | [ID truncated] | RegionOne | cinder       | volume         | True    | internal  | http://172.29.236.100:8776/v1/%(project_id)s      |
       | [ID truncated] | RegionOne | heat-cfn     | cloudformation | True    | public    | https://10.23.100.127:8000/v1                     |
-      | [ID truncated] | RegionOne | ceilometer   | metering       | True    | public    | https://10.23.100.127:8777                        |
-      | [ID truncated] | RegionOne | designate    | dns            | True    | public    | http://10.23.100.127:9001                         |
+      | [ID truncated] | RegionOne | designate    | dns            | True    | public    | https://10.23.100.127:9001                        |
       | [ID truncated] | RegionOne | swift        | object-store   | True    | admin     | http://172.29.236.100:8080/v1/AUTH_%(project_id)s |
       | [ID truncated] | RegionOne | heat         | orchestration  | True    | internal  | http://172.29.236.100:8004/v1/%(project_id)s      |
-      | [ID truncated] | RegionOne | ceilometer   | metering       | True    | internal  | http://172.29.236.100:8777                        |
-      | [ID truncated] | RegionOne | cinder       | volume         | True    | admin     | http://172.29.236.100:8776/v1/%(project_id)s      |
       | [ID truncated] | RegionOne | swift        | object-store   | True    | internal  | http://172.29.236.100:8080/v1/AUTH_%(project_id)s |
-      | [ID truncated] | RegionOne | neutron      | network        | True    | public    | https://10.23.100.127:9696                        |
       | [ID truncated] | RegionOne | heat         | orchestration  | True    | public    | https://10.23.100.127:8004/v1/%(project_id)s      |
       | [ID truncated] | RegionOne | gnocchi      | metric         | True    | admin     | http://172.29.236.100:8041                        |
       | [ID truncated] | RegionOne | gnocchi      | metric         | True    | internal  | http://172.29.236.100:8041                        |
-      | [ID truncated] | RegionOne | keystone     | identity       | True    | public    | https://10.23.100.127:5000/v3                     |
-      | [ID truncated] | RegionOne | glance       | image          | True    | admin     | http://172.29.236.100:9292                        |
       +----------------+-----------+--------------+----------------+---------+-----------+---------------------------------------------------+
 
 #. Run an OpenStack command to ensure all the compute services are
@@ -116,7 +114,7 @@ the OpenStack API and dashboard, as an administrator.
       |  1 | nova-conductor   | aio1-nova-conductor-container-5482ff27 | internal | enabled | up    | 2018-02-14T15:34:42.000000 |
       |  2 | nova-scheduler   | aio1-nova-scheduler-container-0b594e89 | internal | enabled | up    | 2018-02-14T15:34:47.000000 |
       |  5 | nova-consoleauth | aio1-nova-console-container-835ca240   | internal | enabled | up    | 2018-02-14T15:34:47.000000 |
-      |  6 | nova-compute     | ubuntu-bionic                          | nova     | enabled | up    | 2018-02-14T15:34:42.000000 |
+      |  6 | nova-compute     | ubuntu-focal                           | nova     | enabled | up    | 2018-02-14T15:34:42.000000 |
       +----+------------------+----------------------------------------+----------+---------+-------+----------------------------+
 
 #. Run an OpenStack command to ensure the networking services are
@@ -130,13 +128,24 @@ the OpenStack API and dashboard, as an administrator.
       | ID                                   | Agent Type           | Host                                   | Availability Zone | Alive | State | Binary                    |
       +--------------------------------------+----------------------+----------------------------------------+-------------------+-------+-------+---------------------------+
       | 262b29fe-e60e-44b0-ae3c-065565f8deb7 | Metering agent       | aio1-neutron-agents-container-2b0569d5 | None              | :-)   | UP    | neutron-metering-agent    |
-      | 41135f7f-9e6c-4122-b6b3-d131bfaae53e | Linux bridge agent   | ubuntu-bionic                          | None              | :-)   | UP    | neutron-linuxbridge-agent |
+      | 41135f7f-9e6c-4122-b6b3-d131bfaae53e | Open vSwitch agent   | ubuntu-focal                           | None              | :-)   | UP    | neutron-openvswitch-agent |
       | 615d12a8-e738-490a-8552-2a03c8544b51 | Metadata agent       | aio1-neutron-agents-container-2b0569d5 | None              | :-)   | UP    | neutron-metadata-agent    |
       | 99b2abd3-a330-4ca7-b524-ed176c10b31c | DHCP agent           | aio1-neutron-agents-container-2b0569d5 | nova              | :-)   | UP    | neutron-dhcp-agent        |
-      | e0139a26-fbf7-4cee-a37f-90940dc5851f | Linux bridge agent   | aio1-neutron-agents-container-2b0569d5 | None              | :-)   | UP    | neutron-linuxbridge-agent |
+      | e0139a26-fbf7-4cee-a37f-90940dc5851f | Open vSwitch agent   | aio1-neutron-agents-container-2b0569d5 | None              | :-)   | UP    | neutron-openvswitch-agent |
       | feb20ed4-4346-4ad9-b50c-41efd784f2e9 | L3 agent             | aio1-neutron-agents-container-2b0569d5 | nova              | :-)   | UP    | neutron-l3-agent          |
       +--------------------------------------+----------------------+----------------------------------------+-------------------+-------+-------+---------------------------+
 
+   If your using OVN (with compute nodes as gateway) it can look like this:
+
+   .. code::
+
+      $ openstack network agent list
+      +--------------------------------------+------------------------------+-----------+-------------------+-------+-------+----------------------------+
+      | ID                                   | Agent Type                   | Host      | Availability Zone | Alive | State | Binary                     |
+      +--------------------------------------+------------------------------+-----------+-------------------+-------+-------+----------------------------+
+      | 585902cc-7727-4f42-9f1c-f385ff2582c7 | OVN Controller Gateway agent | compute01 | nova              | :-)   | UP    | ovn-controller             |
+      | e6074935-dac1-5ad2-85e5-d93a76f8bed6 | OVN Metadata agent           | compute01 | nova              | :-)   | UP    | neutron-ovn-metadata-agent |
+      +--------------------------------------+------------------------------+-----------+-------------------+-------+-------+----------------------------+
 
 #. Run an OpenStack command to ensure the block storage services are
    working (depends on your configuration).
@@ -167,7 +176,7 @@ the OpenStack API and dashboard, as an administrator.
       +--------------------------------------+--------+--------+
 
 #. Check the backend API health on your load balancer nodes.
-   For example, if using haproxy, ensure no backend is marked
+   For example, if using HAProxy, ensure no backend is marked
    as "DOWN":
 
    .. code ::

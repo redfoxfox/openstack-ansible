@@ -2,7 +2,7 @@
 Telemetry with Gnocchi, Ceph and Redis example
 ==============================================
 
-The default openstack-ansible installation configures gnocchi to use a file as
+The default OpenStack-Ansible installation configures gnocchi to use a file as
 storage backend. When you already have a pre-installed ceph, you can use this
 as backend for gnocchi. This documentation will guide you how to set up
 gnocchi to use your ceph as storage backend.
@@ -22,11 +22,11 @@ You have to add some pip packages to your gnocchi setup:
     - cryptography
     - gnocchiclient
     # this is what we want:
-    #  - "gnocchi[mysql,ceph,ceph_alternative_lib,redis]"
+    #  - "gnocchi[mysql,ceph,ceph_alternative_lib,redis,keystone]"
     # but as there is no librados >=12.2 pip package we have to first install ceph without alternative support
     # after adding the ceph repo to gnocchi container, python-rados>=12.2.0 is installed and linked automatically
     # and gnocchi will automatically take up the features present in the used rados lib.
-    - "gnocchi[mysql,ceph,redis]"
+    - "gnocchi[mysql,ceph,redis,keystone]"
     - keystonemiddleware
     - python-memcached
 
@@ -48,9 +48,9 @@ storage for your gnocchi installation. The `supported storage systems`_ are:
 * Amazon S3
 * Redis
 
-.. _supported storage systems: https://gnocchi.xyz/intro.html#incoming-and-storage-drivers
+.. _supported storage systems: https://gnocchi.osci.io/intro.html#incoming-and-storage-drivers
 
-When your Swift installation uses Ceph as backend, the only one left for this
+When your Swift API endpoint uses Ceph as a backend, the only one left for this
 setup is Redis.
 
 So first of all setup a redis server/cluster, e.g. with this `ansible role`_.
@@ -64,7 +64,7 @@ Cluster as incoming storage:
     gnocchi_conf_overrides:
       incoming:
         driver: redis
-        redis_url: redis://{{ hostvars[groups['redis-master'][0]]['ansible_default_ipv4']['address'] }}:{{ hostvars[groups['redis-master'][0]]['redis_sentinel_port'] }}?sentinel=master01{% for host in groups['redis-slave'] %}&sentinel_fallback={{ hostvars[host]['ansible_default_ipv4']['address'] }}:{{ hostvars[host]['redis_sentinel_port'] }}{% endfor %}
+        redis_url: redis://{{ hostvars[groups['redis-master'][0]]['ansible_default_ipv4']['address'] }}:{{ hostvars[groups['redis-master'][0]]['redis_sentinel_port'] }}?sentinel=master01{% for host in groups['redis-slave'] %}&sentinel_fallback={{ hostvars[host]['ansible_default_ipv4']['address'] }}:{{ hostvars[host]['redis_sentinel_port'] }}{% endfor %}&db=0
 
 You also have to install additional pip/distro packages to use the redis
 cluster:
@@ -77,11 +77,13 @@ cluster:
     - libapache2-mod-wsgi
     - git
     - build-essential
-    - python-dev
+    - python3-dev
+    - librados-dev
     - libpq-dev
-    - python-rados
+    - python3-rados
     # additional package for python redis client
-    - python-redis
+    - python3-redis
+    - libsystemd-dev
 
 .. code-block:: yaml
 
@@ -89,14 +91,15 @@ cluster:
     - cryptography
     - gnocchiclient
     # this is what we want:
-    #  - "gnocchi[mysql,ceph,ceph_alternative_lib,redis]"
+    #  - "gnocchi[mysql,ceph,ceph_alternative_lib,redis,keystone]"
     # but as there is no librados >=12.2 pip package we have to first install ceph without alternative support
     # after adding the ceph repo to gnocchi container, python-rados>=12.2.0 is installed and linked automatically
     # and gnocchi will automatically take up the features present in the used rados lib.
-    - "gnocchi[mysql,ceph,redis]"
+    - "gnocchi[mysql,ceph,redis,keystone]"
     - keystonemiddleware
     - python-memcached
     - redis
+    - systemd-python
 
 .. note::
 
@@ -119,7 +122,7 @@ Create containers for Zookeeper:
     zookeeper_hosts:
     {% for server in groups['control_nodes'] %}
     {{ server }}:
-      ip: {{ hostvars[server]['ansible_default_ipv4']['address'] }}
+      ip: {{ hostvars[server]['ansible_facts']['default_ipv4']['address'] }}
     {% endfor%}
 
 .. code-block:: console
@@ -144,7 +147,7 @@ Now you can set up Zookeeper as coordination backend for Gnocchi:
 
 .. code-block:: console
 
-    gnocchi_coordination_url: "zookeeper://{% for host in groups['zookeeper_all'] %}{{ hostvars[host]['container_address'] }}:2181{% if not loop.last %},{% endif %}{% endfor %}"
+    gnocchi_coordination_url: "zookeeper://{% for host in groups['zookeeper_all'] %}{{ hostvars[host]['management_address'] }}:2181{% if not loop.last %},{% endif %}{% endfor %}"
 
 You also have to install additional packages:
 
@@ -154,14 +157,15 @@ You also have to install additional packages:
     - cryptography
     - gnocchiclient
     # this is what we want:
-    #  - "gnocchi[mysql,ceph,ceph_alternative_lib,redis]"
+    #  - "gnocchi[mysql,ceph,ceph_alternative_lib,redis,keystone]"
     # but as there is no librados >=12.2 pip package we have to first install ceph without alternative support
     # after adding the ceph repo to gnocchi container, python-rados>=12.2.0 is installed and linked automatically
     # and gnocchi will automatically take up the features present in the used rados lib.
-    - "gnocchi[mysql,ceph,redis]"
+    - "gnocchi[mysql,ceph,redis,keystone]"
     - keystonemiddleware
     - python-memcached
     - redis
+    - systemd-python
     # addiitional pip packages needed for zookeeper coordination backend
     - tooz
     - lz4
@@ -173,4 +177,4 @@ Performance Tests for Gnocchi
 For more ideas how to tune your Gnocchi stack, take a look at these
 presentations:
 
-* https://docs.openstack.org/performance-docs/test_results/telemetry_gnocchi_with_ceph/index.html
+* https://docs.openstack.org/performance-docs/latest/test_results/telemetry_gnocchi_with_ceph/index.html

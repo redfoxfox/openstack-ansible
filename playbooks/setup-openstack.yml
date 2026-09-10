@@ -13,36 +13,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-- import_playbook: os-keystone-install.yml
-- import_playbook: os-barbican-install.yml
-- import_playbook: os-placement-install.yml
-- import_playbook: os-glance-install.yml
-- import_playbook: os-cinder-install.yml
-- import_playbook: os-nova-install.yml
-- import_playbook: os-neutron-install.yml
-- import_playbook: os-heat-install.yml
-- import_playbook: os-horizon-install.yml
-- import_playbook: os-designate-install.yml
-- import_playbook: os-gnocchi-install.yml
-- import_playbook: os-swift-install.yml
-- import_playbook: os-ceilometer-install.yml
-- import_playbook: os-aodh-install.yml
-- import_playbook: os-panko-install.yml
-- import_playbook: os-ironic-install.yml
-- import_playbook: os-magnum-install.yml
-- import_playbook: os-trove-install.yml
-- import_playbook: os-sahara-install.yml
-- import_playbook: os-octavia-install.yml
-- import_playbook: os-tacker-install.yml
-- import_playbook: os-blazar-install.yml
-- import_playbook: os-masakari-install.yml
-- import_playbook: os-manila-install.yml
-- import_playbook: os-mistral-install.yml
-- import_playbook: os-murano-install.yml
-
-# This is not an OpenStack service, but integrates with Keystone and must be
-# deployed afterward.
-- import_playbook: ceph-rgw-install.yml
-- import_playbook: os-congress-install.yml
-- import_playbook: os-tempest-install.yml
-- import_playbook: os-rally-install.yml
+- name: Importing setup_openstack playbook
+  import_playbook: openstack.osa.setup_openstack

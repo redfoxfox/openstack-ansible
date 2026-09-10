@@ -7,24 +7,14 @@ exchanges, bindings, and runtime parameters. A collection of nodes is often
 referred to as a `cluster`. For more information on RabbitMQ clustering, see
 `RabbitMQ cluster <https://www.rabbitmq.com/clustering.html>`_.
 
-Within OpenStack-Ansible, all data and states required for operation of the RabbitMQ
-cluster is replicated across all nodes including the message queues providing
-high availability. RabbitMQ nodes address each other using domain names.
-The hostnames of all cluster members must be resolvable from all cluster
+Within OpenStack-Ansible, all data and states required for operation of the
+RabbitMQ cluster is replicated across all nodes including the message queues
+providing high availability. RabbitMQ nodes address each other using domain
+names. The hostnames of all cluster members must be resolvable from all cluster
 nodes, as well as any machines where CLI tools related to RabbitMQ might be
-used. There are alternatives that may work in more
-restrictive environments. For more details on that setup, see
-`Inet Configuration <http://erlang.org/doc/apps/erts/inet_cfg.html>`_.
-
-
-.. note::
-
-   There is currently an Ansible bug in regards to ``HOSTNAME``. If
-   the host ``.bashrc`` holds a var named ``HOSTNAME``, the container where the
-   ``lxc_container`` module attaches will inherit this var and potentially
-   set the wrong ``$HOSTNAME``. See
-   `the Ansible fix <https://github.com/ansible/ansible/pull/22246>`_ which will
-   be released in Ansible version 2.3.
+used. There are alternatives that may work in more restrictive environments.
+For more details on that setup, see
+`Inet Configuration <https://www.erlang.org/doc/apps/erts/inet_cfg.html>`_.
 
 Create a RabbitMQ cluster
 -------------------------
@@ -72,7 +62,7 @@ and re-configuring these nodes into a cluster configuration.
 Using a 3 node example, you would be telling nodes 2 and 3 to join the
 cluster of the first node.
 
-#. Login to the 2nd and 3rd node and stop the rabbitmq application.
+#. Login to the 2nd and 3rd node and stop the RabbitMQ application.
 
 #. Join the cluster, then restart the application:
 
@@ -121,15 +111,15 @@ process by stopping the RabbitMQ application on the third node.
 Stop and restart a RabbitMQ cluster
 -----------------------------------
 
-To stop and start the cluster, keep in mind the order in
-which you shut the nodes down. The last node you stop, needs to be the
-first node you start. This node is the `master`.
+To stop and start the cluster, keep in mind the order in which you shut the
+nodes down. The last node you stop, needs to be the first node you start.
+This node is the `master`.
 
 If you start the nodes out of order, you could run into an issue where
 it thinks the current `master` should not be the master and drops the messages
 to ensure that no new messages are queued while the real master is down.
 
-RabbitMQ and mnesia
+RabbitMQ and Mnesia
 -------------------
 
 Mnesia is a distributed database that RabbitMQ uses to store information about
@@ -137,17 +127,17 @@ users, exchanges, queues, and bindings. Messages, however
 are not stored in the database.
 
 For more information about Mnesia, see the
-`Mnesia overview <http://erlang.org/doc/apps/mnesia/Mnesia_overview.html>`_.
+`Mnesia overview <https://www.erlang.org/doc/apps/mnesia/mnesia_overview>`_.
 
-To view the locations of important Rabbit files, see
+To view the locations of important RabbitMQ files, see
 `File Locations <https://www.rabbitmq.com/relocate.html>`_.
 
 Repair a partitioned RabbitMQ cluster for a single-node
 -------------------------------------------------------
 
 Invariably due to something in your environment, you are likely to lose a
-node in your cluster. In this scenario, multiple LXC containers on the same host
-are running Rabbit and are in a single Rabbit cluster.
+node in your cluster. In this scenario, multiple LXC containers on the same
+host are running RabbitMQ and are in a single RabbitMQ cluster.
 
 If the host still shows as part of the cluster, but it is not running,
 execute:
@@ -166,7 +156,7 @@ node from the cluster by executing the following:
 
       # rabbitmqctl stop_app
 
-#. On the Rabbit2 node, execute:
+#. On the RabbitMQ second node, execute:
 
    .. code-block:: console
 
@@ -186,7 +176,8 @@ the failing node.
       rabbit1$ rabbitmqctl start_app
       Starting node rabbit@rabbit1 ...
 
-      Error: inconsistent_cluster: Node rabbit@rabbit1 thinks it's clustered with node rabbit@rabbit2, but rabbit@rabbit2 disagrees
+      Error: inconsistent_cluster: Node rabbit@rabbit1 thinks it's clustered
+             with node rabbit@rabbit2, but rabbit@rabbit2 disagrees
 
       rabbit1$ rabbitmqctl reset
       Resetting node rabbit@rabbit1 ...done.
@@ -217,3 +208,26 @@ multi-node cluster are:
 
 Consult the rabbitmqctl manpage for more information.
 
+Migrate between HA and Quorum queues
+------------------------------------
+
+In the 2024.1 (Caracal) release OpenStack-Ansible switches to use RabbitMQ
+Quorum Queues by default, rather than the legacy High Availability classic
+queues. Migration to Quorum Queues can be performed at upgrade time, but may
+result in extended control plane downtime as this requires all OpenStack
+services to be restarted with their new configuration.
+
+In order to speed up the migration, the following playbooks can be run to
+migrate either to or from Quorum Queues, whilst skipping package install and
+other configuration tasks. These tasks are available from the 2024.1 release
+onwards.
+
+   .. code-block:: console
+
+      $ openstack-ansible openstack.osa.rabbitmq_server --tags rabbitmq-config
+      $ openstack-ansible openstack.osa.setup_openstack --tags common-mq,post-install
+
+In order to take advantage of these steps, we suggest setting
+`oslomsg_rabbit_quorum_queues` to ``false`` before upgrading to 2024.1. Then, once
+you have upgraded, set `oslomsg_rabbit_quorum_queues` back to the default of
+``true`` and run the playbooks above.

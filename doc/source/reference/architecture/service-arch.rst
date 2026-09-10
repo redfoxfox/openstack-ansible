@@ -4,7 +4,7 @@ Service architecture
 Introduction
 ~~~~~~~~~~~~
 
-OpenStack-Ansible has a flexible deployment configuration model that
+OpenStack-Ansible (OSA) has a flexible deployment configuration model that
 can deploy all services in separate machine containers or on designated hosts
 without using containers, and all network traffic either on a single
 network interface or on many network interfaces.
@@ -28,15 +28,16 @@ OpenStack-Ansible deploys the following infrastructure components:
 * RabbitMQ
 
   OpenStack services use RabbitMQ for Advanced Message Queuing Protocol (AMQP).
-  OSA deploys RabbitMQ in a clustered configuration with all
-  queues mirrored between the cluster nodes. Because Telemetry (ceilometer)
-  message queue traffic is quite heavy, for large environments we recommend
-  separating Telemetry notifications into a separate RabbitMQ cluster.
+  OpenStack-Ansible deploys RabbitMQ in a clustered configuration
+  with all queues mirrored between the cluster nodes. Because
+  Telemetry (ceilometer) message queue traffic is quite heavy, for large
+  environments we recommend separating Telemetry notifications
+  into a separate RabbitMQ cluster.
 
 * Memcached
 
   OpenStack services use Memcached for in-memory caching, which accelerates
-  transactions. For example, the OpenStack Identity service (keystone) uses
+  transactions. For example, the OpenStack Identity service (Keystone) uses
   Memcached for caching authentication tokens, which ensures that token
   validation does not have to complete a disk or database transaction every
   time the service is asked to validate a token.
@@ -49,14 +50,15 @@ OpenStack-Ansible deploys the following infrastructure components:
   * A Git repository that contains a copy of the source code that is used
     to prepare the packages for all OpenStack services
   * Python wheels for all services that are deployed in the environment
-  * An apt/yum proxy cache that is used to cache distribution packages
+  * An apt/dnf proxy cache that is used to cache distribution packages
     installed in the environment
 
 * Load balancer
 
-  At least one load balancer is required for a deployment. OSA
-  provides a deployment of `HAProxy`_, but we recommend using a physical
-  load balancing appliance for production environments.
+  At least one load balancer is required for a deployment.
+  OpenStack-Ansible provides a deployment of `HAProxy`_, but we
+  recommend using a physical load balancing appliance for
+  production environments.
 
 * Utility container
 
@@ -68,26 +70,21 @@ OpenStack-Ansible deploys the following infrastructure components:
   OpenStack environment. It is set to automatically use the internal service
   endpoints.
 
-* Log aggregation host
-
-  A rsyslog service is optionally set up to receive rsyslog traffic from all
-  hosts and containers. You can replace rsyslog with any alternative log
-  receiver.
-
 * Unbound DNS container
 
   Containers running an `Unbound DNS`_ caching service can optionally be
   deployed to cache DNS lookups and to handle internal DNS name resolution.
   We recommend using this service for large-scale production environments
   because the deployment will be significantly faster. If this service is not
-  used, OSA modifies ``/etc/hosts`` entries for all hosts in the environment.
+  used, OpenStack-Ansible modifies ``/etc/hosts`` entries for all
+  hosts in the environment.
 
-.. _HAProxy: http://www.haproxy.org/
+.. _HAProxy: https://www.haproxy.org/
 .. _Unbound DNS: https://www.unbound.net/
 
 OpenStack services
 ~~~~~~~~~~~~~~~~~~
 
-OSA is able to deploy a multitude of services.
+OpenStack-Ansible is able to deploy a multitude of services.
 Have a look at the role maturity matrix to know the status of the
 service you want to deploy.

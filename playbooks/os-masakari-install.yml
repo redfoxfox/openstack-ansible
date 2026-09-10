@@ -13,48 +13,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-- name: Install the masakari components
-  hosts: masakari_all
-  gather_facts: "{{ osa_gather_facts | default(True) }}"
-  user: root
-  vars_files:
-    - "defaults/repo_packages/openstack_services.yml"
-    - "defaults/{{ install_method }}_install.yml"
-  pre_tasks:
-    # In order to ensure that any container, software or
-    # config file changes which causes a container/service
-    # restart do not cause an unexpected outage, we drain
-    # the load balancer back end for this container.
-    - include_tasks: common-tasks/haproxy-endpoint-manage.yml
-      vars:
-        haproxy_backend: masakari_api-back
-        haproxy_state: disabled
-      when:
-        - "'masakari_api' in group_names"
-        - "groups['masakari_api'] | length > 1"
-
-    - include_tasks: "common-tasks/os-{{ container_tech | default('lxc') }}-container-setup.yml"
-      when: not is_metal
-
-    - include_tasks: common-tasks/unbound-clients.yml
-      when:
-        - hostvars['localhost']['resolvconf_enabled'] | bool
-
-  roles:
-    - role: "os_masakari"
-
-  post_tasks:
-    # Now that container changes are done, we can set
-    # the load balancer back end for this container
-    # to available again.
-    - include_tasks: common-tasks/haproxy-endpoint-manage.yml
-      vars:
-        haproxy_backend: masakari_api-back
-        haproxy_state: enabled
-      when:
-        - "'masakari_api' in group_names"
-        - "groups['masakari_api'] | length > 1"
-
-  environment: "{{ deployment_environment_variables | default({}) }}"
-  tags:
-    - masakari
+- name: Importing masakari playbook
+  import_playbook: openstack.osa.masakari

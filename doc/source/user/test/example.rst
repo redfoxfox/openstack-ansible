@@ -1,3 +1,5 @@
+.. _test-environment-example:
+
 ========================
 Test environment example
 ========================
@@ -57,7 +59,7 @@ The following host name and IP address assignments are used for this
 environment.
 
 +------------------+----------------+-------------------+----------------+
-| Host name        | Management IP  | Tunnel (VxLAN) IP | Storage IP     |
+| Host name        | Management IP  | Tunnel (VXLAN) IP | Storage IP     |
 +==================+================+===================+================+
 | infra1           | 172.29.236.11  | 172.29.240.11     |                |
 +------------------+----------------+-------------------+----------------+

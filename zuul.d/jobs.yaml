@@ -14,18 +14,45 @@
 # limitations under the License.
 
 - job:
-    name: openstack-ansible-deploy-aio
+    name: openstack-ansible-deploy
     parent: base
     description: |
-      Run functional tests for an OpenStack-Ansible project.
-      Uses the gate-check-commit.sh script, running a default
-      aio deploy.
-    required-projects:
+      Global parent for integrated OpenStack-Ansible tests
+    pre-run:
+      - zuul.d/playbooks/pre-gate-cleanup.yml
+      - zuul.d/playbooks/pre-gate-scenario.yml
+      - zuul.d/playbooks/pre-osa-requirements.yml
+      - zuul.d/playbooks/pre-osa-aio.yml
+    run: zuul.d/playbooks/run.yml
+    post-run:
+      - zuul.d/playbooks/post.yml
+    timeout: 10800
+    post-timeout: 10800
+    irrelevant-files:
+      - ^\.git.*
+      - ^.*\.(example|md|rst)$
+      - ^doc/.*
+      - ^releasenotes/.*
+      - ^setup\.(cfg|py)$
+      - ^tox.ini$
+    vars:
+      #disable powertools/highavailabity for centos
+      configure_mirrors_extra_repos: "{{ ansible_facts['os_family'] | lower != 'redhat' }}"
+      #disable generation of ARA html report to reduce log upload time
+      ara_report_type: database
+
+- job:
+    name: openstack-ansible-deploy-aio-distro
+    parent: openstack-ansible-deploy
+    description: |
+      Run integrated tests for an OpenStack-Ansible project.
+      This should be used only for distro based tests.
+    required-projects: &r-p-no_services
+      # OSA repos
       - name: openstack/openstack-ansible
       - name: openstack/ansible-hardening
       - name: openstack/openstack-ansible-apt_package_pinning
       - name: openstack/ansible-config_template
-      - name: openstack/openstack-ansible-galera_client
       - name: openstack/openstack-ansible-galera_server
       - name: openstack/openstack-ansible-ceph_client
       - name: openstack/openstack-ansible-haproxy_server
@@ -35,12 +62,13 @@
       - name: openstack/openstack-ansible-openstack_hosts
       - name: openstack/openstack-ansible-os_keystone
       - name: openstack/openstack-ansible-openstack_openrc
+      - name: openstack/openstack-ansible-os_adjutant
       - name: openstack/openstack-ansible-os_aodh
       - name: openstack/openstack-ansible-os_barbican
       - name: openstack/openstack-ansible-os_blazar
       - name: openstack/openstack-ansible-os_ceilometer
       - name: openstack/openstack-ansible-os_cinder
-      - name: openstack/openstack-ansible-os_congress
+      - name: openstack/openstack-ansible-os_freezer
       - name: openstack/openstack-ansible-os_designate
       - name: openstack/openstack-ansible-os_glance
       - name: openstack/openstack-ansible-os_gnocchi
@@ -54,62 +82,298 @@
       - name: openstack/openstack-ansible-os_neutron
       - name: openstack/openstack-ansible-os_nova
       - name: openstack/openstack-ansible-os_octavia
-      - name: openstack/openstack-ansible-os_panko
       - name: openstack/openstack-ansible-os_placement
       - name: openstack/openstack-ansible-os_rally
-      - name: openstack/openstack-ansible-os_sahara
+      - name: openstack/openstack-ansible-os_skyline
       - name: openstack/openstack-ansible-os_swift
       - name: openstack/openstack-ansible-os_tacker
       - name: openstack/openstack-ansible-os_tempest
       - name: openstack/openstack-ansible-os_trove
       - name: openstack/openstack-ansible-plugins
-      - name: openstack/ansible-role-qdrouterd
       - name: openstack/openstack-ansible-rabbitmq_server
       - name: openstack/openstack-ansible-repo_server
-      - name: openstack/openstack-ansible-rsyslog_client
-      - name: openstack/openstack-ansible-rsyslog_server
-      - name: openstack/openstack-ansible-nspawn_container_create
-      - name: openstack/openstack-ansible-nspawn_hosts
+      - name: openstack/openstack-ansible-ops
+      - name: openstack/ansible-role-httpd
       - name: openstack/ansible-role-systemd_service
       - name: openstack/ansible-role-systemd_mount
       - name: openstack/ansible-role-systemd_networkd
       - name: openstack/ansible-role-python_venv_build
       - name: openstack/ansible-role-uwsgi
-    pre-run:
-      - zuul.d/playbooks/pre-gate-scenario.yml
-      - zuul.d/playbooks/pre-osa-aio.yml
-    run: zuul.d/playbooks/run.yml
-    post-run:
-      - zuul.d/playbooks/post.yml
-    timeout: 10800
-    irrelevant-files:
-      - ^\.git.*
-      - ^.*\.(example|md|rst)$
-      - ^deploy-guide/.*
-      - ^doc/.*
-      - ^releasenotes/.*
-      - ^setup\.(cfg|py)$
-      - ^tox.ini$
-      - ^Vagrantfile
+      - name: openstack/ansible-role-pki
+      - name: openstack/ansible-role-zookeeper
+      # OpenStack service repos - listed here to make cached repos available in CI
+      - name: openstack/requirements
+      # All deployment scenarios including infra need keystone
+      - name: openstack/keystone
+      # Tempest plus plugins needed for ubuntu distro jobs
+      - name: openstack/tempest
+      - name: openstack/barbican-tempest-plugin
+      - name: openstack/blazar-tempest-plugin
+      - name: openstack/cinder-tempest-plugin
+      - name: openstack/cloudkitty-tempest-plugin
+      - name: openstack/designate-tempest-plugin
+      - name: openstack/glance-tempest-plugin
+      - name: openstack/heat-tempest-plugin
+      - name: openstack/ironic-tempest-plugin
+      - name: openstack/keystone-tempest-plugin
+      - name: openstack/magnum-tempest-plugin
+      - name: openstack/manila-tempest-plugin
+      - name: openstack/neutron-tempest-plugin
+      - name: openstack/octavia-tempest-plugin
+      - name: openstack/telemetry-tempest-plugin
+      - name: openstack/trove-tempest-plugin
+      - name: openstack/zun-tempest-plugin
+      - name: openstack/rally-openstack
+
+- job:
+    name: openstack-ansible-tox-inventory
+    parent: tox
+    nodeset: ubuntu-noble
+    description: |
+            Dynamic dynamic_inventory unit tests using tox
+    vars:
+      tox_envlist: inventory
+    files:
+        - ^osa_toolkit/.*$
+        - ^etc/openstack_deploy/.*$
+        - ^inventory/.*$
+
+- job:
+    name: openstack-ansible-tox-molecule
+    parent: tox-molecule
+    vars:
+      tox_environment: &molecule_tox_env
+        TEST_BRANCH: "{{ zuul.branch }}"
+        OSA_TEST_REQUIREMENTS_FILE: "{{ ansible_user_dir }}/src/opendev.org/openstack/openstack-ansible/test-requirements.txt"
+        TOX_CONSTRAINTS_FILE: "{{ ansible_user_dir }}/src/opendev.org/openstack/requirements/upper-constraints.txt"
+    required-projects:
+      - name: openstack/openstack-ansible
+      - name: openstack/requirements
+
+- job:
+    name: openstack-ansible-deploy-aio-infra
+    parent: openstack-ansible-deploy
+    description: |
+      Run integrated tests for an OpenStack-Ansible project.
+      This should be used only for infra based tests.
+    required-projects: *r-p-no_services
+
+- job:
+    name: openstack-ansible-deploy-aio-hosts
+    parent: openstack-ansible-deploy
+    description: |
+      Run integrated tests for an OpenStack-Ansible project.
+      This should be used only for hosts based tests.
+    required-projects: *r-p-no_services
+
+- job:
+    name: openstack-ansible-deploy-aio
+    parent: openstack-ansible-deploy
+    description: |
+      Run integrated tests for an OpenStack-Ansible project.
+      This should be used only for source based tests.
+    required-projects:
+      # OSA repos
+      - name: openstack/openstack-ansible
+      - name: openstack/ansible-hardening
+      - name: openstack/openstack-ansible-apt_package_pinning
+      - name: openstack/ansible-config_template
+      - name: openstack/openstack-ansible-galera_server
+      - name: openstack/openstack-ansible-ceph_client
+      - name: openstack/openstack-ansible-haproxy_server
+      - name: openstack/openstack-ansible-lxc_container_create
+      - name: openstack/openstack-ansible-lxc_hosts
+      - name: openstack/openstack-ansible-memcached_server
+      - name: openstack/openstack-ansible-openstack_hosts
+      - name: openstack/openstack-ansible-os_keystone
+      - name: openstack/openstack-ansible-openstack_openrc
+      - name: openstack/openstack-ansible-os_adjutant
+      - name: openstack/openstack-ansible-os_aodh
+      - name: openstack/openstack-ansible-os_barbican
+      - name: openstack/openstack-ansible-os_blazar
+      - name: openstack/openstack-ansible-os_ceilometer
+      - name: openstack/openstack-ansible-os_cloudkitty
+      - name: openstack/openstack-ansible-os_cinder
+      - name: openstack/openstack-ansible-os_designate
+      - name: openstack/openstack-ansible-os_freezer
+      - name: openstack/openstack-ansible-os_glance
+      - name: openstack/openstack-ansible-os_gnocchi
+      - name: openstack/openstack-ansible-os_heat
+      - name: openstack/openstack-ansible-os_horizon
+      - name: openstack/openstack-ansible-os_ironic
+      - name: openstack/openstack-ansible-os_magnum
+      - name: openstack/openstack-ansible-os_manila
+      - name: openstack/openstack-ansible-os_masakari
+      - name: openstack/openstack-ansible-os_mistral
+      - name: openstack/openstack-ansible-os_neutron
+      - name: openstack/openstack-ansible-os_nova
+      - name: openstack/openstack-ansible-os_octavia
+      - name: openstack/openstack-ansible-os_placement
+      - name: openstack/openstack-ansible-os_rally
+      - name: openstack/openstack-ansible-os_skyline
+      - name: openstack/openstack-ansible-os_swift
+      - name: openstack/openstack-ansible-os_tacker
+      - name: openstack/openstack-ansible-os_tempest
+      - name: openstack/openstack-ansible-os_trove
+      - name: openstack/openstack-ansible-plugins
+      - name: openstack/openstack-ansible-rabbitmq_server
+      - name: openstack/openstack-ansible-repo_server
+      - name: openstack/ansible-role-httpd
+      - name: openstack/ansible-role-systemd_service
+      - name: openstack/ansible-role-systemd_mount
+      - name: openstack/ansible-role-systemd_networkd
+      - name: openstack/ansible-role-python_venv_build
+      - name: openstack/ansible-role-uwsgi
+      - name: openstack/ansible-role-pki
+      - name: openstack/ansible-role-zookeeper
+      # OpenStack service repos - listed here to make cached repos available in CI
+      - name: openstack/requirements
+      - name: openstack/adjutant
+      - name: openstack/adjutant-ui
+      - name: openstack/aodh
+      - name: openstack/barbican
+      - name: openstack/barbican-ui
+      - name: openstack/ceilometer
+      - name: openstack/cinder
+      - name: openstack/cloudkitty
+      - name: openstack/cloudkitty-dashboard
+      - name: openstack/freezer
+      - name: openstack/freezer-api
+      - name: openstack/freezer-web-ui
+      - name: openstack/designate
+      - name: openstack/designate-dashboard
+      - name: openstack/glance
+      - name: openstack/heat
+      - name: openstack/heat-dashboard
+      - name: openstack/horizon
+      - name: openstack/ironic-ui
+      - name: openstack/magnum-ui
+      - name: openstack/masakari-dashboard
+      - name: openstack/neutron-fwaas-dashboard
+      - name: openstack/keystone
+      - name: openstack/manila
+      - name: openstack/neutron
+      - name: openstack/neutron-vpnaas
+      - name: openstack/neutron-vpnaas-dashboard
+      - name: openstack/neutron-fwaas
+      - name: openstack/neutron-fwaas-dashboard
+      - name: openstack/neutron-dynamic-routing
+      - name: openstack/networking-bgpvpn
+      - name: openstack/networking-sfc
+      - name: openstack/nova
+      - name: openstack/ovn-bgp-agent
+      - name: openstack/ovn-octavia-provider
+      - name: openstack/skyline-apiserver
+      - name: openstack/skyline-console
+      - name: openstack/swift
+      - name: openstack/ironic
+      - name: openstack/ironic-inspector
+      - name: openstack/magnum
+      - name: openstack/magnum-capi-helm
+      - name: openstack/masakari
+      - name: openstack/masakari-monitors
+      - name: openstack/mistral
+      - name: openstack/mistral-extra
+      - name: openstack/trove
+      - name: openstack/trove-dashboard
+      - name: openstack/octavia
+      - name: openstack/placement
+      - name: openstack/tacker
+      - name: openstack/octavia-dashboard
+      - name: openstack/blazar
+      - name: openstack/blazar-nova
+      - name: openstack/zun
+      - name: openstack/zun-ui
+      - name: openstack/kuryr-libnetwork
+      - name: openstack/kuryr
+      # Tempest plus plugins
+      - name: openstack/tempest
+      - name: openstack/barbican-tempest-plugin
+      - name: openstack/blazar-tempest-plugin
+      - name: openstack/cinder-tempest-plugin
+      - name: openstack/cloudkitty-tempest-plugin
+      - name: openstack/designate-tempest-plugin
+      - name: openstack/freezer-tempest-plugin
+      - name: openstack/glance-tempest-plugin
+      - name: openstack/heat-tempest-plugin
+      - name: openstack/ironic-tempest-plugin
+      - name: openstack/keystone-tempest-plugin
+      - name: openstack/magnum-tempest-plugin
+      - name: openstack/manila-tempest-plugin
+      - name: openstack/neutron-tempest-plugin
+      - name: openstack/octavia-tempest-plugin
+      - name: openstack/telemetry-tempest-plugin
+      - name: openstack/trove-tempest-plugin
+      - name: openstack/zun-tempest-plugin
+      - name: openstack/rally-openstack
 
 # Ensuring overrides work
+
 - job:
     name: openstack-ansible-varstest-aio
     parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+    nodeset: ubuntu-noble
+
+# Ensuring SHAs are valid
+
+- job:
+    name: openstack-ansible-shastest-metal
+    parent: openstack-ansible-deploy
+    nodeset: ubuntu-noble
+    irrelevant-files: []
+    files:
+      - ^ansible-collection-requirements\.yml
+      - ^ansible-role-requirements\.yml
+      - ^inventory\/group_vars\/*\/source_git\.yml
+
+# Ensuring hosts setup and healthcheck-hosts playbook is valid
+
+- job:
+    name: openstack-ansible-deploy-hosts_lxc-validate
+    parent: openstack-ansible-deploy-hosts_lxc-ubuntu-noble
+    files:
+      - ^playbooks\/healthcheck-hosts.yml
+      - ^playbooks\/lxc-containers-create.yml
+      - ^playbooks\/lxc-hosts-setup.yml
+      - ^playbooks\/containers-lxc-create.yml
+      - ^playbooks\/containers-lxc-host.yml
+      - ^playbooks\/certificate-authority.yml
+      - ^playbooks\/certificate-ssh-authority.yml
+      - ^playbooks\/containers-deploy.yml
+      - ^playbooks\/openstack-hosts-setup.yml
+      - ^playbooks\/setup-hosts.yml
+      - ^playbooks\/security-hardening.yml
+
+# Ensuring clustering and healthcheck-infrastructure playbook is valid
+- job:
+    name: openstack-ansible-deploy-infra_lxc-validate
+    parent: openstack-ansible-deploy-infra_lxc-ubuntu-noble
+    files:
+      - ^playbooks\/galera(-install)?\.yml
+      - ^playbooks\/rabbitmq(-install)?\.yml
+      - ^playbooks\/memcached(-install)?\.yml
+      - ^playbooks\/healthcheck-infrastructure\.yml
+      - ^playbooks\/repo(-install|_server)\.yml
+      - ^playbooks\/haproxy(-install)?\.yml
+      - ^playbooks\/utility(-install|_host)\.yml
+      - ^playbooks\/zookeeper-(-install)?\.yml
+      - ^playbooks\/k8s-(-install)?\.yml
 
 # Running linters check
+
 - job:
-    name: openstack-ansible-linters-ubuntu-bionic
+    name: openstack-ansible-linters-ubuntu-noble
     parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+    nodeset: ubuntu-noble
+    irrelevant-files: []
 
 # Experimental job for checking our AIO can deploy with
 # a different ansible version
+
 - job:
-    name: openstack-ansible-deploy_with_ansible_devel-aio-ubuntu-bionic
+    name: openstack-ansible-deploy_with_ansible_devel-aio-ubuntu-noble
     parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+    nodeset: ubuntu-noble
     branches: ^(devel|master)$
     required-projects:
       - name: github.com/ansible/ansible
@@ -119,10 +383,11 @@
 
 # Experimental job for checking our AIO can deploy with
 # a different ansible version
+
 - job:
-    name: openstack-ansible-deploy_with_ansible_next-aio-ubuntu-bionic
+    name: openstack-ansible-deploy_with_ansible_next-aio-ubuntu-noble
     parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+    nodeset: ubuntu-noble
     branches: ^(devel|master)$
     required-projects:
       - name: github.com/ansible/ansible
@@ -130,198 +395,563 @@
     vars:
       ansible_package: "file://{{ ansible_user_dir }}/src/github.com/ansible/ansible"
 
-# debian
-- job:
-    name: openstack-ansible-deploy-aio_metal-debian-buster
-    parent: openstack-ansible-deploy-aio
-    nodeset: debian-buster
-
-# ubuntu
-- job:
-    name: openstack-ansible-deploy-aio_lxc-ubuntu-bionic
-    parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+# Ubuntu 24.04 (Noble Numbat)
 
 - job:
-    name: openstack-ansible-deploy-aio_distro_lxc-ubuntu-bionic
+    name: openstack-ansible-deploy-aio_lxc-ubuntu-noble
     parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+    nodeset: ubuntu-noble
 
 - job:
-    name: openstack-ansible-deploy-aio_ceph-ubuntu-bionic
+    name: openstack-ansible-deploy-aio_ceph-ubuntu-noble
     parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+    nodeset: ubuntu-noble
 
 - job:
-    name: openstack-ansible-deploy-aio_proxy-ubuntu-bionic
+    name: openstack-ansible-deploy-aio_nfs-ubuntu-noble
     parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+    nodeset: ubuntu-noble
 
 - job:
-    name: openstack-ansible-deploy-aio_distro_ceph-ubuntu-bionic
+    name: openstack-ansible-deploy-aio_proxy-ubuntu-noble
     parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+    nodeset: ubuntu-noble
 
 - job:
-    name: openstack-ansible-deploy-aio_metal-ubuntu-bionic
+    name: openstack-ansible-deploy-aio_stepca-ubuntu-noble
     parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+    nodeset: ubuntu-noble
 
 - job:
-    name: openstack-ansible-deploy-aio_telemetry_metal-ubuntu-bionic
+    name: openstack-ansible-deploy-aio_metal-ubuntu-noble
     parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+    nodeset: ubuntu-noble
 
 - job:
-    name: openstack-ansible-deploy-aio_distro_metal-ubuntu-bionic
+    name: openstack-ansible-upgrade-aio_metal-ubuntu-noble
     parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
-
-- job:
-    name: openstack-ansible-upgrade-aio_lxc-ubuntu-bionic
-    parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+    nodeset: ubuntu-noble
     timeout: 10800
 
 - job:
-    name: openstack-ansible-upgrade-aio_metal-ubuntu-bionic
+    name: openstack-ansible-deploy-aio_metal_stepca-ubuntu-noble
     parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-deploy-aio_tls-ubuntu-noble
+    parent: openstack-ansible-deploy-aio
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-deploy-aio_metal_openbao-ubuntu-noble
+    parent: openstack-ansible-deploy-aio
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-deploy-aio_metal_tls-ubuntu-noble
+    parent: openstack-ansible-deploy-aio
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-upgrade-aio_metal_tls-ubuntu-noble
+    parent: openstack-ansible-deploy-aio
+    nodeset: ubuntu-noble
     timeout: 10800
 
 - job:
-    name: openstack-ansible-deploy-aio_nspawn-ubuntu-bionic
+    name: openstack-ansible-upgrade-aio_lxc-ubuntu-noble
     parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
-
-- job:
-    name: openstack-ansible-upgrade-aio_ceph-ubuntu-bionic
-    parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
+    nodeset: ubuntu-noble
     timeout: 10800
 
 - job:
-    name: openstack-ansible-deploy-aio_octavia-ubuntu-bionic
-    parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
-
-- job:
-    name: openstack-ansible-deploy-aio_qdrouterd-ubuntu-bionic
-    parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
-
-- job:
-    name: openstack-ansible-deploy-translations-ubuntu-bionic
-    parent: openstack-ansible-deploy-aio
-    nodeset: ubuntu-bionic
-
-# centos
-- job:
-    name: openstack-ansible-deploy-aio_lxc-centos-7
-    parent: openstack-ansible-deploy-aio
-    nodeset: centos-7
-
-- job:
-    name: openstack-ansible-deploy-aio_distro_lxc-centos-7
-    parent: openstack-ansible-deploy-aio
-    nodeset: centos-7
-
-- job:
-    name: openstack-ansible-deploy-aio_ceph-centos-7
-    parent: openstack-ansible-deploy-aio
-    nodeset: centos-7
-
-- job:
-    name: openstack-ansible-deploy-aio_distro_ceph-centos-7
-    parent: openstack-ansible-deploy-aio
-    nodeset: centos-7
-
-- job:
-    name: openstack-ansible-upgrade-aio_lxc-centos-7
-    parent: openstack-ansible-deploy-aio
-    nodeset: centos-7
+    name: openstack-ansible-upgrade-infra_lxc-ubuntu-noble
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: ubuntu-noble
     timeout: 10800
 
 - job:
-    name: openstack-ansible-deploy-aio_metal-centos-7
-    parent: openstack-ansible-deploy-aio
-    nodeset: centos-7
+    name: openstack-ansible-deploy-infra_lxc-ubuntu-noble
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: ubuntu-noble
 
 - job:
-    name: openstack-ansible-deploy-aio_telemetry_metal-centos-7
-    parent: openstack-ansible-deploy-aio
-    nodeset: centos-7
+    name: openstack-ansible-deploy-infra_lxc_stepca-ubuntu-noble
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: ubuntu-noble
 
 - job:
-    name: openstack-ansible-deploy-aio_distro_metal-centos-7
-    parent: openstack-ansible-deploy-aio
-    nodeset: centos-7
+    name: openstack-ansible-deploy-infra_lxc_tls-ubuntu-noble
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: ubuntu-noble
 
 - job:
-    name: openstack-ansible-deploy-aio_nspawn-centos-7
-    parent: openstack-ansible-deploy-aio
-    nodeset: centos-7
+    name: openstack-ansible-deploy-k8sHA_lxc-ubuntu-noble
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: ubuntu-noble
 
 - job:
-    name: openstack-ansible-upgrade-aio_metal-centos-7
+    name: openstack-ansible-deploy-hosts_lxc-ubuntu-noble
+    parent: openstack-ansible-deploy-aio-hosts
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-deploy-hosts_metal-ubuntu-noble
+    parent: openstack-ansible-deploy-aio-hosts
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-deploy-aio_telemetry_metal-ubuntu-noble
     parent: openstack-ansible-deploy-aio
-    nodeset: centos-7
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-deploy-aio_distro_metal-ubuntu-noble
+    parent: openstack-ansible-deploy-aio-distro
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-deploy-aio_distro_lxc-ubuntu-noble
+    parent: openstack-ansible-deploy-aio-distro
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-deploy-infra_distro_lxc-ubuntu-noble
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-deploy-hosts_distro_lxc-ubuntu-noble
+    parent: openstack-ansible-deploy-aio-hosts
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-deploy-hosts_lxc_zfs-ubuntu-noble
+    parent: openstack-ansible-deploy-aio
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-deploy-hosts_lxc_btrfs-ubuntu-noble
+    parent: openstack-ansible-deploy-aio
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-deploy-hosts_lxc_overlayfs-ubuntu-noble
+    parent: openstack-ansible-deploy-aio
+    nodeset: ubuntu-noble
+
+- job:
+    name: openstack-ansible-tox-molecule-ubuntu-noble
+    parent: openstack-ansible-tox-molecule
+    vars:
+      tox_environment:
+        <<: *molecule_tox_env
+        DOCKER_REGISTRY: quay.io/gotmax23
+        DOCKER_IMAGE_TAG: ubuntu-systemd:noble
+
+# Ubuntu 26.04 jobs
+
+- job:
+    name: openstack-ansible-deploy-aio_lxc-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-deploy-aio_ceph-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-deploy-aio_nfs-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-deploy-aio_proxy-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-deploy-aio_stepca-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-deploy-aio_metal-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-upgrade-aio_metal-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-ubuntu-resolute
     timeout: 10800
 
 - job:
-    name: openstack-ansible-upgrade-aio_ceph-centos-7
+    name: openstack-ansible-deploy-aio_metal_stepca-ubuntu-resolute
     parent: openstack-ansible-deploy-aio
-    nodeset: centos-7
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-deploy-aio_tls-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-deploy-aio_metal_tls-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-upgrade-aio_metal_tls-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-ubuntu-resolute
     timeout: 10800
 
-# debian
 - job:
-    name: openstack-ansible-deploy-aio_telemetry_metal-debian-buster
+    name: openstack-ansible-upgrade-aio_lxc-ubuntu-resolute
     parent: openstack-ansible-deploy-aio
-    nodeset: debian-buster
+    nodeset: osa-ubuntu-resolute
+    timeout: 10800
 
 - job:
-    name: openstack-ansible-deploy-aio_lxc-debian-buster
-    parent: openstack-ansible-deploy-aio
-    nodeset: debian-buster
-
-# opensuse
-- job:
-    name: openstack-ansible-deploy-aio_lxc-opensuse-15
-    parent: openstack-ansible-deploy-aio
-    nodeset: opensuse-15
+    name: openstack-ansible-upgrade-infra_lxc-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: osa-ubuntu-resolute
+    timeout: 10800
 
 - job:
-    name: openstack-ansible-deploy-aio_distro_lxc-opensuse-15
-    parent: openstack-ansible-deploy-aio
-    nodeset: opensuse-15
+    name: openstack-ansible-deploy-infra_lxc-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: osa-ubuntu-resolute
 
 - job:
-    name: openstack-ansible-deploy-aio_ceph-opensuse-15
-    parent: openstack-ansible-deploy-aio
-    nodeset: opensuse-15
+    name: openstack-ansible-deploy-infra_lxc_stepca-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: osa-ubuntu-resolute
 
 - job:
-    name: openstack-ansible-deploy-aio_distro_ceph-opensuse-15
-    parent: openstack-ansible-deploy-aio
-    nodeset: opensuse-15
+    name: openstack-ansible-deploy-infra_lxc_tls-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: osa-ubuntu-resolute
 
 - job:
-    name: openstack-ansible-deploy-aio_metal-opensuse-15
-    parent: openstack-ansible-deploy-aio
-    nodeset: opensuse-15
+    name: openstack-ansible-deploy-hosts_lxc-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio-hosts
+    nodeset: osa-ubuntu-resolute
 
 - job:
-    name: openstack-ansible-deploy-aio_telemetry_metal-opensuse-15
-    parent: openstack-ansible-deploy-aio
-    nodeset: opensuse-15
+    name: openstack-ansible-deploy-hosts_metal-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio-hosts
+    nodeset: osa-ubuntu-resolute
 
 - job:
-    name: openstack-ansible-deploy-aio_distro_metal-opensuse-15
+    name: openstack-ansible-deploy-aio_telemetry_metal-ubuntu-resolute
     parent: openstack-ansible-deploy-aio
-    nodeset: opensuse-15
+    nodeset: osa-ubuntu-resolute
 
 - job:
-    name: openstack-ansible-deploy-aio_nspawn-opensuse-15
+    name: openstack-ansible-deploy-aio_distro_metal-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio-distro
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-deploy-aio_distro_lxc-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio-distro
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-deploy-infra_distro_lxc-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-deploy-hosts_distro_lxc-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio-hosts
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-deploy-hosts_lxc_zfs-ubuntu-resolute
     parent: openstack-ansible-deploy-aio
-    nodeset: opensuse-15
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-deploy-hosts_lxc_btrfs-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-deploy-hosts_lxc_overlayfs-ubuntu-resolute
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-ubuntu-resolute
+
+- job:
+    name: openstack-ansible-tox-molecule-ubuntu-resolute
+    parent: openstack-ansible-tox-molecule
+    vars:
+      tox_environment:
+        <<: *molecule_tox_env
+        DOCKER_REGISTRY: quay.io/gotmax23
+        DOCKER_IMAGE_TAG: ubuntu-systemd:resolute
+
+# CentOS Stream 10
+
+- job:
+    name: openstack-ansible-deploy-aio_lxc-centos-10-stream
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-centos-10-stream
+
+- job:
+    name: openstack-ansible-deploy-infra_lxc-centos-10-stream
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-centos-10-stream
+
+- job:
+    name: openstack-ansible-deploy-hosts_lxc-centos-10-stream
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-centos-10-stream
+
+- job:
+    name: openstack-ansible-deploy-hosts_metal-centos-10-stream
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-centos-10-stream
+
+- job:
+    name: openstack-ansible-deploy-aio_metal-centos-10-stream
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-centos-10-stream
+
+- job:
+    name: openstack-ansible-deploy-aio_telemetry_metal-centos-10-stream
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-centos-10-stream
+
+- job:
+    name: openstack-ansible-upgrade-aio_metal-centos-10-stream
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-centos-10-stream
+    timeout: 10800
+
+- job:
+    name: openstack-ansible-tox-molecule-centos-10-stream
+    parent: openstack-ansible-tox-molecule
+    nodeset: osa-nested-virt-noble
+    vars:
+      tox_environment:
+        <<: *molecule_tox_env
+        DOCKER_REGISTRY: quay.io/gotmax23
+        DOCKER_IMAGE_TAG: centos-systemd:stream10
+
+# Rocky Linux 10
+
+- job:
+    name: openstack-ansible-tox-molecule-rockylinux-10
+    parent: openstack-ansible-tox-molecule
+    vars:
+      tox_environment:
+        <<: *molecule_tox_env
+        DOCKER_REGISTRY: quay.io/rockylinux
+        DOCKER_IMAGE_TAG: rockylinux:10-ubi-init
+
+- job:
+    name: openstack-ansible-deploy-aio_lxc-rockylinux-10
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-rockylinux-10
+
+- job:
+    name: openstack-ansible-deploy-infra_lxc-rockylinux-10
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-rockylinux-10
+
+- job:
+    name: openstack-ansible-deploy-infra_lxc_tls-rockylinux-10
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-rockylinux-10
+
+- job:
+    name: openstack-ansible-deploy-hosts_lxc-rockylinux-10
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-rockylinux-10
+
+- job:
+    name: openstack-ansible-deploy-hosts_metal-rockylinux-10
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-rockylinux-10
+
+- job:
+    name: openstack-ansible-deploy-k8sHA_lxc-rockylinux-10
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-rockylinux-10
+
+- job:
+    name: openstack-ansible-deploy-aio_metal-rockylinux-10
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-rockylinux-10
+
+- job:
+    name: openstack-ansible-deploy-aio_tls-rockylinux-10
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-rockylinux-10
+
+- job:
+    name: openstack-ansible-deploy-aio_metal_tls-rockylinux-10
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-rockylinux-10
+
+- job:
+    name: openstack-ansible-deploy-aio_telemetry_metal-rockylinux-10
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-rockylinux-10
+
+- job:
+    name: openstack-ansible-upgrade-aio_metal-rockylinux-10
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-rockylinux-10
+    timeout: 10800
+
+- job:
+    name: openstack-ansible-deploy-hosts_lxc_overlayfs-rockylinux-10
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-rockylinux-10
+
+# debian trixie
+
+- job:
+    name: openstack-ansible-deploy-aio_telemetry_metal-debian-trixie
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-debian-trixie
+    vars:
+      mirror_fqdn: deb.debian.org
+      pypi_mirror: https://pypi.org/simple
+      pypi_fqdn:
+      wheel_mirror:
+
+- job:
+    name: openstack-ansible-deploy-aio_lxc-debian-trixie
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-debian-trixie
+    vars:
+      mirror_fqdn: deb.debian.org
+      pypi_mirror: https://pypi.org/simple
+      pypi_fqdn:
+      wheel_mirror:
+
+- job:
+    name: openstack-ansible-deploy-infra_lxc-debian-trixie
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: osa-debian-trixie
+    vars:
+      mirror_fqdn: deb.debian.org
+      pypi_mirror: https://pypi.org/simple
+      pypi_fqdn:
+      wheel_mirror:
+
+- job:
+    name: openstack-ansible-deploy-k8sHA_lxc-debian-trixie
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: osa-debian-trixie
+    vars:
+      mirror_fqdn: deb.debian.org
+      pypi_mirror: https://pypi.org/simple
+      pypi_fqdn:
+      wheel_mirror:
+
+- job:
+    name: openstack-ansible-deploy-hosts_lxc-debian-trixie
+    parent: openstack-ansible-deploy-aio-hosts
+    nodeset: osa-debian-trixie
+    vars:
+      mirror_fqdn: deb.debian.org
+      pypi_mirror: https://pypi.org/simple
+      pypi_fqdn:
+      wheel_mirror:
+
+- job:
+    name: openstack-ansible-deploy-infra_distro_lxc-debian-trixie
+    parent: openstack-ansible-deploy-aio-infra
+    nodeset: osa-debian-trixie
+    vars:
+      mirror_fqdn: deb.debian.org
+      pypi_mirror: https://pypi.org/simple
+      pypi_fqdn:
+      wheel_mirror:
+
+- job:
+    name: openstack-ansible-deploy-hosts_distro_lxc-debian-trixie
+    parent: openstack-ansible-deploy-aio-hosts
+    nodeset: osa-debian-trixie
+    vars:
+      mirror_fqdn: deb.debian.org
+      pypi_mirror: https://pypi.org/simple
+      pypi_fqdn:
+      wheel_mirror:
+
+- job:
+    name: openstack-ansible-deploy-hosts_metal-debian-trixie
+    parent: openstack-ansible-deploy-aio-hosts
+    nodeset: osa-debian-trixie
+    vars:
+      mirror_fqdn: deb.debian.org
+      pypi_mirror: https://pypi.org/simple
+      pypi_fqdn:
+      wheel_mirror:
+
+- job:
+    name: openstack-ansible-deploy-aio_distro_lxc-debian-trixie
+    parent: openstack-ansible-deploy-aio-distro
+    nodeset: osa-debian-trixie
+    vars:
+      mirror_fqdn: deb.debian.org
+      pypi_mirror: https://pypi.org/simple
+      pypi_fqdn:
+      wheel_mirror:
+
+- job:
+    name: openstack-ansible-deploy-aio_metal-debian-trixie
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-debian-trixie
+    vars:
+      mirror_fqdn: deb.debian.org
+      pypi_mirror: https://pypi.org/simple
+      pypi_fqdn:
+      wheel_mirror:
+
+- job:
+    name: openstack-ansible-deploy-aio_distro_metal-debian-trixie
+    parent: openstack-ansible-deploy-aio-distro
+    nodeset: osa-debian-trixie
+    vars:
+      mirror_fqdn: deb.debian.org
+      pypi_mirror: https://pypi.org/simple
+      pypi_fqdn:
+      wheel_mirror:
+
+- job:
+    name: openstack-ansible-deploy-hosts_lxc_btrfs-debian-trixie
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-debian-trixie
+    vars:
+      mirror_fqdn: deb.debian.org
+      pypi_mirror: https://pypi.org/simple
+      pypi_fqdn:
+      wheel_mirror:
+
+- job:
+    name: openstack-ansible-deploy-hosts_lxc_overlayfs-debian-trixie
+    parent: openstack-ansible-deploy-aio
+    nodeset: osa-debian-trixie
+    vars:
+      mirror_fqdn: deb.debian.org
+      pypi_mirror: https://pypi.org/simple
+      pypi_fqdn:
+      wheel_mirror:
+
+- job:
+    name: openstack-ansible-tox-molecule-debian-trixie
+    parent: openstack-ansible-tox-molecule
+    vars:
+      tox_environment:
+        <<: *molecule_tox_env
+        DOCKER_REGISTRY: quay.io/gotmax23
+        DOCKER_IMAGE_TAG: debian-systemd:trixie

@@ -28,13 +28,12 @@ ZUUL_PROJECT="${ZUUL_PROJECT:-}"
 GATE_EXIT_LOG_COPY="${GATE_EXIT_LOG_COPY:-false}"
 GATE_EXIT_LOG_GZIP="${GATE_EXIT_LOG_GZIP:-true}"
 GATE_EXIT_RUN_ARA="${GATE_EXIT_RUN_ARA:-true}"
-GATE_EXIT_RUN_DSTAT="${GATE_EXIT_RUN_DSTAT:-true}"
-# If this is a gate node from OpenStack-Infra Store all logs into the
-#  execution directory after gate run.
-if [[ -n "$ZUUL_PROJECT" ]]; then
-  GATE_EXIT_LOG_COPY=true
-fi
 
+if [ -v ZUUL_PROJECT ] || [ -v ZUUL_SRC_PATH ]; then
+  GATE_EXIT_RUN_DSTAT="${GATE_EXIT_RUN_DSTAT:-true}"
+else
+  GATE_EXIT_RUN_DSTAT="${GATE_EXIT_RUN_DSTAT:-false}"
+fi
 
 # The default SSHD configuration has MaxSessions = 10. If a deployer changes
 #  their SSHD config, then the ANSIBLE_FORKS may be set to a higher number. We
@@ -57,18 +56,10 @@ fi
 # Build ansible-runtime venv
 function build_ansible_runtime_venv {
     # All distros have a python-virtualenv > 13.
-    # - Centos 7 has 15.1, which holds pip 9.0.1, setuptools 28.8, wheel 0.29
-    #   See also: http://mirror.centos.org/centos/7/os/x86_64/Packages/
-    # - openSUSE 42.3 has 13.1.2, which holds pip 7.1.2, setuptools 18.2, wheel 0.24.
-    #   See also: https://build.opensuse.org/package/show/openSUSE%3ALeap%3A42.3/python-virtualenv
-    # - Ubuntu Xenial has 15.0.1, holding pip 8.1.1, setuptools 20.3, wheel 0.29
-    #   See also: https://packages.ubuntu.com/xenial/python-virtualenv
-
-    virtualenv --python=${PYTHON_EXEC_PATH} --never-download --clear /opt/ansible-runtime
+    ${PYTHON_EXEC_PATH} -m venv /opt/ansible-runtime --clear
 
     # The vars used to prepare the Ansible runtime venv
     PIP_OPTS+=" --constraint global-requirement-pins.txt"
-    PIP_OPTS+=" --constraint ${UPPER_CONSTRAINTS_FILE}"
 
     # When executing the installation, we want to specify all our options on the CLI,
     # making sure to completely ignore any config already on the host. This is to
@@ -77,25 +68,17 @@ function build_ansible_runtime_venv {
     # use --isolated so that the config file is ignored.
 
     # Upgrade pip setuptools and wheel to the appropriate version
-    ${PIP_COMMAND} install --isolated ${PIP_OPTS} --upgrade pip setuptools wheel
+    ${PIP_COMMAND} install --isolated ${PIP_OPTS} --constraint ${TOX_CONSTRAINTS_FILE} --upgrade pip setuptools wheel
 
     # Install ansible and the other required packages
-    ${PIP_COMMAND} install --isolated ${PIP_OPTS} -r requirements.txt ${ANSIBLE_PACKAGE}
+    ${PIP_COMMAND} install --isolated ${PIP_OPTS} --constraint ${TOX_CONSTRAINTS_FILE} -r requirements.txt ${ANSIBLE_PACKAGE}
 
     # Install our osa_toolkit code from the current checkout
     $PIP_COMMAND install -e .
 
-    # Add SELinux support to the venv
-    if [ -d "/usr/lib64/python2.7/site-packages/selinux/" ]; then
-      rsync -avX /usr/lib64/python2.7/site-packages/selinux/ /opt/ansible-runtime/lib64/python2.7/selinux/
-    fi
-}
-
-# If in OpenStack-Infra, set some vars to use the mirror when bootstrapping Ansible
-function load_nodepool_pip_opts {
+    # If we are in openstack-CI, install systemd-python for the log collection python script
     if [[ -e /etc/ci/mirror_info.sh ]]; then
-        source /etc/ci/mirror_info.sh
-        export PIP_OPTS="--index-url ${NODEPOOL_PYPI_MIRROR} --trusted-host ${NODEPOOL_MIRROR_HOST} --extra-index-url ${NODEPOOL_WHEEL_MIRROR}"
+      ${PIP_COMMAND} install --isolated ${PIP_OPTS} systemd-python
     fi
 }
 
@@ -105,6 +88,8 @@ function determine_distro {
     source /etc/os-release 2>/dev/null
     export DISTRO_ID="${ID}"
     export DISTRO_NAME="${NAME}"
+    export DISTRO_VERSION_ID=${VERSION_ID}
+    export DISTRO_FAMILY="${ID_LIKE:-""} ${ID}"
 }
 
 function ssh_key_create {
@@ -160,12 +145,17 @@ function exit_state {
 
 function exit_success {
   set +x
+  if [ "$GATE_EXIT_RUN_DSTAT" == true ]; then
+    generate_dstat_charts || true
+  fi
   exit_state 0
 }
 
 function exit_fail {
   set +x
-  log_instance_info
+  if [ "$GATE_EXIT_RUN_DSTAT" == true ]; then
+    generate_dstat_charts || true
+  fi
   info_block "Error Info - $@"
   exit_state 1
 }
@@ -195,55 +185,52 @@ function gate_job_exit_tasks {
   log_instance_info
 }
 
+function gate_log_requirements {
+  # ensure packages are installed to get instance info
+  determine_distro
+  case ${DISTRO_FAMILY} in
+      *"debian"*)
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get -y install iproute2 net-tools parallel
+          ;;
+      *"rhel"*)
+          dnf -y install epel-release
+          sed -i 's/\[epel\]/&\nincludepkgs=parallel/' /etc/yum.repos.d/epel.repo
+          dnf -y --enablerepo=epel install iproute parallel
+          ;;
+  esac
+}
+
 function setup_ara {
   # Install ARA and add it to the callback path provided by bootstrap-ansible.sh/openstack-ansible.rc
   # This is added *here* instead of bootstrap-ansible so it's used for CI purposes only.
-  ARA_SRC_HOME="${HOME}/src/opendev.org/recordsansible/ara"
-  if [[ -d "${ARA_SRC_HOME}" ]]; then
-    # This installs from a git checkout
-    # PIP_COMMAND and PIP_OPTS are exported by the bootstrap-ansible script.
-    # PIP_OPTS contains the whole set of constraints that need to be applied.
-    ${PIP_COMMAND} install --isolated ${PIP_OPTS} ${ARA_SRC_HOME} "${ANSIBLE_PACKAGE:-ansible}"
-  else
-    # This installs from pypi
-    # PIP_COMMAND and PIP_OPTS are exported by the bootstrap-ansible script.
-    # PIP_OPTS contains the whole set of constraints that need to be applied.
-    ${PIP_COMMAND} install --isolated ${PIP_OPTS} 'ara<1.0.0' "${ANSIBLE_PACKAGE:-ansible}"
-  fi
+  # PIP_COMMAND and PIP_OPTS are exported by the bootstrap-ansible script.
+  # PIP_OPTS contains the whole set of constraints that need to be applied.
+  ${PIP_COMMAND} install --isolated ${PIP_OPTS} "ara[server]"
 }
 
 function run_dstat {
   if [ "$GATE_EXIT_RUN_DSTAT" == true ]; then
-    case ${DISTRO_ID} in
-      centos|rhel)
-          # Prefer dnf over yum for CentOS.
-          which dnf &>/dev/null && RHT_PKG_MGR='dnf' || RHT_PKG_MGR='yum'
-          $RHT_PKG_MGR -y install dstat
-          ;;
-      ubuntu)
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get -y install dstat
-          ;;
-      opensuse)
-          zypper -n install -l dstat
-          ;;
-    esac
+    if [[ ! -d /opt/dool ]]; then
+      git clone https://github.com/scottchiefbaker/dool /opt/dool
+      python3 /opt/dool/install.py
+    fi
 
     # https://stackoverflow.com/a/20338327 executing in ()& decouples the dstat
     # process from scripts-library to prevent hung builds if dstat fails to exit
     # for any reason.
-    (dstat -tcmsdn --top-cpu --top-mem --top-bio --nocolor --output /openstack/log/instance-info/dstat.csv \
+    (dool -tcmsdn --top-cpu --top-mem --top-bio --nocolor --output /openstack/log/instance-info/dstat.csv \
         < /dev/null > /openstack/log/instance-info/dstat.log 2>&1 &)
   fi
 }
 
 function generate_dstat_charts {
-  kill $(pgrep -f dstat)
+  kill $(pgrep -f dool)
   if [[ ! -d /opt/dstat_graph ]]; then
-    git clone https://github.com/Dabz/dstat_graph /opt/dstat_graph
+    git clone https://opendev.org/opendev/dstat_graph /opt/dstat_graph
   fi
   pushd /opt/dstat_graph
-    /usr/bin/env bash -e ./generate_page.sh /openstack/log/instance-info/dstat.csv >> /openstack/log/instance-info/dstat.html
+    /usr/bin/env bash -e ./generate_page.sh /openstack/log/instance-info/dstat.csv > /openstack/log/instance-info/dstat.html
   popd
 }
 
@@ -259,19 +246,6 @@ function info_block {
 }
 
 function log_instance_info {
-  # ensure packages are installed to get instance info
-  determine_distro
-  case ${DISTRO_ID} in
-      ubuntu|debian)
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get -y install iproute2 net-tools
-          ;;
-      centos|rhel)
-          # Prefer dnf over yum for CentOS.
-          which dnf &>/dev/null && RHT_PKG_MGR='dnf' || RHT_PKG_MGR='yum'
-          $RHT_PKG_MGR -y install iproute
-          ;;
-  esac
   set +x
   # Get host information post initial setup and reset verbosity
   if [ ! -d "/openstack/log/instance-info" ];then
@@ -286,7 +260,7 @@ function log_instance_info {
 }
 
 function get_repos_info {
-  for i in /etc/apt/sources.list /etc/apt/sources.list.d/* /etc/yum.conf /etc/yum.repos.d/* /etc/zypp/repos.d/*; do
+  for i in /etc/apt/sources.list /etc/apt/sources.list.d/* /etc/dnf/dnf.conf /etc/yum.repos.d/*; do
     if [ -f "${i}" ]; then
       echo -e "\n$i"
       cat $i
@@ -298,33 +272,27 @@ function get_repos_info {
 function get_instance_info {
   TS="$(date +"%H-%M-%S")"
   (cat /etc/resolv.conf && \
-    which systemd-resolve &> /dev/null && \
+    command -v systemd-resolve &> /dev/null && \
       systemd-resolve --statistics && \
         cat /etc/systemd/resolved.conf) > \
           "/openstack/log/instance-info/host_dns_info_${TS}.log" || true
-  if [ "$(which tracepath)" ]; then
+  if [ "$(command -v tracepath)" ]; then
     { tracepath "8.8.8.8" -m 5 2>/dev/null || tracepath "8.8.8.8"; } > \
       "/openstack/log/instance-info/host_tracepath_info_${TS}.log" || true
   fi
-  if [ "$(which tracepath6)" ]; then
+  if [ "$(command -v tracepath6)" ]; then
     { tracepath6 "2001:4860:4860::8888" -m 5 2>/dev/null || tracepath6 "2001:4860:4860::8888"; } >> \
       "/openstack/log/instance-info/host_tracepath_info_${TS}.log" || true
   fi
-  if [ "$(which lxc-ls)" ]; then
+  if [ "$(command -v lxc-ls)" ]; then
     lxc-ls --fancy > \
       "/openstack/log/instance-info/host_lxc_container_info_${TS}.log" || true
   fi
-  if [ "$(which lxc-checkconfig)" ]; then
+  if [ "$(command -v lxc-checkconfig)" ]; then
     lxc-checkconfig > \
       "/openstack/log/instance-info/host_lxc_config_info_${TS}.log" || true
   fi
-  if [ "$(which machinectl)" ]; then
-    machinectl list > \
-      "/openstack/log/instance-info/host_nspawn_container_info_${TS}.log" || true
-    machinectl list-images > \
-      "/openstack/log/instance-info/host_nspawn_container_image_info_${TS}.log" || true
-  fi
-  if [ "$(which networkctl)" ]; then
+  if [ "$(command -v networkctl)" ]; then
     networkctl list > \
       "/openstack/log/instance-info/host_networkd_list_${TS}.log" || true
     networkctl status >> \
@@ -332,31 +300,28 @@ function get_instance_info {
     networkctl lldp >> \
       "/openstack/log/instance-info/host_networkd_lldp_${TS}.log" || true
   fi
-  (iptables -vnL && iptables -t nat -vnL && iptables -t mangle -vnL) > \
-    "/openstack/log/instance-info/host_firewall_info_${TS}.log" || true
-  if [ "$(which ansible)" ]; then
+  if [ "$(command -v iptables)" ]; then
+    (iptables -vnL && iptables -t nat -vnL && iptables -t mangle -vnL) > \
+      "/openstack/log/instance-info/host_firewall_info_${TS}.log" || true
+  fi
+  if [ "$(command -v ansible)" ]; then
     ANSIBLE_HOST_KEY_CHECKING=False \
-      ansible -i "localhost," localhost -m setup > \
+      ansible -i "localhost," localhost -m setup -c local > \
         "/openstack/log/instance-info/host_system_info_${TS}.log" || true
   fi
   get_repos_info > \
     "/openstack/log/instance-info/host_repo_info_${TS}.log" || true
 
-  for i in nspawn-macvlan.service nspawn-networking.slice nspawn.slice; do
-    systemctl status ${i} > "/openstack/log/instance-info/${i}_${TS}.log" || true
-    journalctl -u ${i} >> "/openstack/log/instance-info/${i}_${TS}.log" || true
-  done
-
   ip route get 1 > "/openstack/log/instance-info/routes_${TS}.log" || true
   ip link show > "/openstack/log/instance-info/links_${TS}.log" || true
 
   determine_distro
-  case ${DISTRO_ID} in
-      centos|rhel|fedora|opensuse)
+  case ${DISTRO_FAMILY} in
+      *"rhel"*)
           rpm -qa | sort > \
             "/openstack/log/instance-info/host_packages_info_${TS}.log" || true
           ;;
-      ubuntu|debian)
+      *"debian"*)
           dpkg-query --list > \
             "/openstack/log/instance-info/host_packages_info_${TS}.log" || true
           ;;
@@ -364,17 +329,19 @@ function get_instance_info {
 
   # Storage reports
   for dir_name in lxc machines; do
-    btrfs filesystem usage /var/lib/${dir_name} > \
-      "/openstack/log/instance-info/btrfs_${dir_name}_usage_${TS}.log" || true
-    btrfs filesystem show /var/lib/${dir_name} > \
-      "/openstack/log/instance-info/btrfs_${dir_name}_show_${TS}.log" || true
-    btrfs filesystem df /var/lib/${dir_name} > \
-      "/openstack/log/instance-info/btrfs_${dir_name}_df_${TS}.log" || true
-    btrfs qgroup show --human-readable -pcre --iec /var/lib/${dir_name} > \
-      "/openstack/log/instance-info/btrfs_${dir_name}_quotas_${TS}.log" || true
+    if [ "$(command -v btrfs)" ]; then
+      btrfs filesystem usage /var/lib/${dir_name} 2>/dev/null > \
+        "/openstack/log/instance-info/btrfs_${dir_name}_usage_${TS}.log" || true
+      btrfs filesystem show /var/lib/${dir_name} 2>/dev/null > \
+        "/openstack/log/instance-info/btrfs_${dir_name}_show_${TS}.log" || true
+      btrfs filesystem df /var/lib/${dir_name} 2>/dev/null > \
+        "/openstack/log/instance-info/btrfs_${dir_name}_df_${TS}.log" || true
+      btrfs qgroup show --human-readable -pcre --iec /var/lib/${dir_name} 2>/dev/null > \
+        "/openstack/log/instance-info/btrfs_${dir_name}_quotas_${TS}.log" || true
+    fi
   done
 
-  if command -v zfs >/dev/null; then
+  if [ "$(command -v zfs)" ]; then
     zfs list > "/openstack/log/instance-info/zfs_lxc_${TS}.log" || true
   fi
 

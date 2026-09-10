@@ -13,46 +13,63 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-## Rabbit options
+## RabbitMQ options
 rabbitmq_host_group: "rabbitmq_all"
 rabbitmq_port: "{{ (rabbitmq_use_ssl | bool) | ternary(5671, 5672) }}"
 
-rabbitmq_use_ssl: True
+rabbitmq_use_ssl: true
 rabbitmq_servers: >-
   {{
     groups[rabbitmq_host_group]
-      | map('extract', hostvars, 'ansible_host')
+      | map('extract', hostvars, 'management_address')
       | list | join(',')
   }}
+
+# If you do not want to use quorum queues, set rabbitmq_queue_replication to false
+rabbitmq_queue_replication: true
+
 rabbitmq_policies:
-  - name: "HA"
-    pattern: '^(?!(amq\.)|(.*_fanout_)|(reply_)).*'
+  - name: CQv2
+    pattern: '.*'
     priority: 0
-    tags: "ha-mode=all"
+    tags:
+      queue-version: 2
+    state: >-
+      {{
+        ((oslomsg_rabbit_quorum_queues | default(true) or not rabbitmq_queue_replication) and rabbitmq_install_method | default('') != 'distro'
+          ) | ternary('present', 'absent')
+      }}
+# The following is an example of an additional policy which applies to fanout/stream queues only
+# By default, each stream uses RabbitMQ's 500MB segment size, and no messages will be discarded
+# until that size is reached. This may result in undesirable disk usage.
+# If using this policy, it must be applied BEFORE any stream queues are created.
+# See also https://bugs.launchpad.net/oslo.messaging/+bug/2089845 and https://www.rabbitmq.com/docs/streams#retention
+#  - name: CQv2F
+#    pattern: '^.*_fanout'
+#    priority: 1
+#    tags:
+#      queue-version: 2
+#      stream-max-segment-size-bytes: 1000000
+#    state: >-
+#      {{
+#        ((oslomsg_rabbit_quorum_queues | default(true) or not rabbitmq_queue_replication) and rabbitmq_install_method | default('') != 'distro'
+#          ) | ternary('present', 'absent')
+#      }}
 
 ## Galera options
 galera_client_package_state: "{{ package_state }}"
 galera_address: "{{ internal_lb_vip_address }}"
-galera_root_user: "root"
+galera_root_user: "admin"
+
+# Disable SSL for CentOS distro path due to https://bugzilla.redhat.com/show_bug.cgi?id=2074555
+galera_use_ssl: "{{ not (ansible_facts['os_family'] | lower == 'redhat' and  install_method == 'distro') }}"
 
 ## Memcached options
 memcached_port: 11211
 memcached_servers: >-
   {{
-    (groups['memcached'] | map('extract', hostvars, 'ansible_host') | list)
+    (groups['memcached'] | map('extract', hostvars, 'management_address') | list)
       | map('regex_replace', '(.+)' ,'\1:' ~ memcached_port)
       | list
       | join(',')
-  }}
-
-## Qdrouterd options
-qdrouterd_host_group: "qdrouterd_all"
-qdrouterd_port: "{{ (qdrouterd_use_ssl | bool) | ternary(31459, 31460) }}"
-
-qdrouterd_use_ssl: False
-qdrouterd_servers: >-
-  {{
-    groups[qdrouterd_host_group]
-      | map('extract', hostvars, 'ansible_host')
-      | list | join(',')
   }}

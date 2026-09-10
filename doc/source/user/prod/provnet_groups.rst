@@ -8,7 +8,7 @@ Many network configuration examples assume a homogenous environment,
 where each server is configured identically and consistent network
 interfaces and interface names can be assumed across all hosts.
 
-Recent changes to OSA enables deployers to define provider networks
+Recent changes to OpenStack-Ansible (OSA) enables deployers to define provider networks
 that apply to particular inventory groups and allows for a heterogeneous
 network configuration within a cloud environment. New groups can be created
 or existing inventory groups, such as ``network_hosts`` or
@@ -17,7 +17,7 @@ only to hosts that meet the given parameters.
 
 Before reading this document, please review the following scenario:
 
-* :dev_docs:`Production environment  <user/prod/example.html>`
+* :ref:`production-environment-config`
 
 This example environment has the following characteristics:
 
@@ -107,8 +107,7 @@ the built-in groups provided by OpenStack-Ansible.
 
 Before creating custom groups, please review the following:
 
-* :dev_docs:`Configuring the inventory
-  <reference/inventory/configure-inventory.html>`
+* :ref:`configuring-inventory`
 
 The following diagram demonstates how a custom group can be used to further
 segment hosts:

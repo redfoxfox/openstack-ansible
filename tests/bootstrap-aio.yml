@@ -15,74 +15,28 @@
 
 - name: Bootstrap the All-In-One (AIO)
   hosts: localhost
-  gather_facts: True
+  gather_facts: true
   user: root
   roles:
-    - role: "sshd"
     - role: "bootstrap-host"
-  vars_files:
-    - "{{ playbook_dir }}/../playbooks/defaults/repo_packages/openstack_services.yml"
   environment: "{{ deployment_environment_variables | default({}) }}"
-  vars:
-    ansible_python_interpreter: "/usr/bin/python"
-    sftp_subsystem:
-        'apt': 'sftp /usr/lib/openssh/sftp-server'
-        'yum': 'sftp /usr/libexec/openssh/sftp-server'
-        'zypper': 'sftp /usr/lib/ssh/sftp-server'
-    sshd:
-      ListenAddress:
-        - 0.0.0.0
-        - '::'
-      Port: 22
-      Protocol: 2
-      HostKey:
-        - "/etc/ssh/ssh_host_rsa_key"
-        - "/etc/ssh/ssh_host_ecdsa_key"
-        - "/etc/ssh/ssh_host_ed25519_key"
-      UsePrivilegeSeparation: yes
-      KeyRegenerationInterval: 3600
-      ServerKeyBits: 1024
-      SyslogFacility: "AUTH"
-      LogLevel: "INFO"
-      LoginGraceTime: 120
-      StrictModes: yes
-      RSAAuthentication: yes
-      PubkeyAuthentication: yes
-      IgnoreRhosts: yes
-      RhostsRSAAuthentication: no
-      HostbasedAuthentication: no
-      PermitEmptyPasswords: no
-      PermitRootLogin: yes
-      ChallengeResponseAuthentication: no
-      PasswordAuthentication: no
-      X11DisplayOffset: 10
-      PrintMotd: no
-      PrintLastLog: no
-      TCPKeepAlive: yes
-      AcceptEnv: "LANG LC_*"
-      Subsystem: "{{ sftp_subsystem[ansible_pkg_mgr] }}"
-      UsePAM: yes
-      UseDNS: no
-      X11Forwarding: no
-      Compression: yes
-      CompressionLevel: 6
-      MaxSessions: 100
-      MaxStartups: "100:100:100"
-      GSSAPIAuthentication: no
-      GSSAPICleanupCredentials: no
   pre_tasks:
     - name: Run setup module
-      setup:
+      ansible.builtin.setup:
         gather_subset:
           - network
           - hardware
           - virtual
-  post_tasks:
-    - name: Check that new network interfaces are up
-      assert:
-        that:
-          - ansible_eth12['active'] == true
-          - ansible_eth13['active'] == true
-          - ansible_eth14['active'] == true
-      when:
-        - (bootstrap_host_container_tech | default('unknown')) != 'nspawn'
+    - name: Ensure sshd is installed
+      ansible.builtin.package:
+        name: openssh-server
+        state: present
+    - name: Ensure sshd is running
+      vars:
+        _ssh_service_name:
+          redhat: sshd
+          debian: ssh
+      ansible.builtin.service:
+        name: "{{ _ssh_service_name[ansible_facts['os_family'] | lower] }}"
+        state: started
+        enabled: true

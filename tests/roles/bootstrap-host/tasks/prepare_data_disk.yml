@@ -19,8 +19,11 @@
 #  formatted as ext4. This is an attempt to achieve idempotency just
 #  in case these tasks are executed multiple times.
 - name: Determine whether partitions labeled openstack-data{1,2} are present
-  shell: |
-    parted --script -l -m | egrep -q ':{{ bootstrap_host_data_disk_fs_type }}:openstack-data[12]:;$'
+  ansible.builtin.shell: |
+    set -o pipefail;
+    parted --script -l -m | grep -Eq ':{{ bootstrap_host_data_disk_fs_type }}:openstack-data[12]:;$'
+  args:
+    executable: /bin/bash
   register: data_disk_partitions
   changed_when: false
   failed_when: false
@@ -28,14 +31,14 @@
     - check-data-disk-partitions
 
 - name: Set bootstrap host data disk fact
-  set_fact:
+  ansible.builtin.set_fact:
     bootstrap_host_data_disk_device_force: true
-    _bootstrap_host_data_disk_device: "{{ (bootstrap_host_data_disk_device | regex_replace('!','/')).strip() }}"
+    _bootstrap_host_data_disk_device: "{{ (bootstrap_host_data_disk_device | regex_replace('!', '/')).strip() }}"
   when:
     - data_disk_partitions.rc == 1
 
 - name: Dismount and remove fstab entries for anything on the data disk device
-  mount:
+  ansible.posix.mount:
     name: "{{ item.mount }}"
     src: "{{ item.device }}"
     fstype: "{{ bootstrap_host_data_disk_fs_type }}"
@@ -44,10 +47,10 @@
     - bootstrap_host_data_disk_device_force | bool
     - item.device is search(bootstrap_host_data_disk_device)
   with_items:
-    - "{{ ansible_mounts }}"
+    - "{{ ansible_facts['mounts'] }}"
 
-- name: Partition the whole data disk for our usage
-  command: "{{ item }}"
+- name: Partition the whole data disk for our usage # noqa: no-changed-when
+  ansible.builtin.command: "{{ item }}"
   when:
     - bootstrap_host_data_disk_device_force | bool
   with_items:
@@ -57,10 +60,25 @@
   tags:
     - create-data-disk-partitions
 
+- name: Determine partition names
+  ansible.builtin.command: "lsblk /dev/{{ _bootstrap_host_data_disk_device }} -o NAME --noheadings --list"
+  register: data_disk_partitions
+  when:
+    - bootstrap_host_data_disk_device_force | bool
+  changed_when: false
+  tags:
+    - create-data-disk-partitions
+
+- name: Set bootstrap host data disk partitions fact
+  ansible.builtin.set_fact:
+    _bootstrap_host_data_partition_devices: "{{ data_disk_partitions.stdout_lines[1:] | list }}"
+  when:
+    - bootstrap_host_data_disk_device_force | bool
+
 - name: Format the partition 1
-  filesystem:
+  community.general.filesystem:
     fstype: "{{ bootstrap_host_data_disk_fs_type }}"
-    dev: "/dev/{{ _bootstrap_host_data_disk_device }}1"
+    dev: "/dev/{{ _bootstrap_host_data_partition_devices[0] }}"
     opts: "{{ bootstrap_host_format_options[bootstrap_host_data_disk_fs_type] | default(omit) }}"
   when:
     - bootstrap_host_data_disk_device_force | bool
@@ -68,87 +86,66 @@
     - format-data-partitions
 
 - name: Format the partition 2
-  filesystem:
+  community.general.filesystem:
     fstype: "{{ bootstrap_host_data_disk2_fs }}"
-    dev: "/dev/{{ _bootstrap_host_data_disk_device }}2"
+    dev: "/dev/{{ _bootstrap_host_data_partition_devices[1] }}"
     opts: "{{ bootstrap_host_format_options[bootstrap_host_data_disk2_fs] | default(omit) }}"
   when:
     - bootstrap_host_data_disk_device_force | bool
-    - lxc_container_backing_store != 'lvm'
-    - lxc_container_backing_store != 'zfs'
+    - _lxc_container_backing_store != 'lvm'
+    - _lxc_container_backing_store != 'zfs'
   tags:
     - format-data-partitions
 
 - name: Run the systemd mount role
-  include_role:
+  ansible.builtin.include_role:
     name: systemd_mount
   vars:
     systemd_mounts:
-      - what: "/dev/{{ _bootstrap_host_data_disk_device }}1"
+      - what: "/dev/{{ _bootstrap_host_data_partition_devices[0] }}"
         where: "/openstack"
         type: "{{ bootstrap_host_data_disk_fs_type }}"
         options: "{{ bootstrap_host_data_mount_options[bootstrap_host_data_disk_fs_type] }}"
         state: 'started'
         enabled: true
-  tags:
-    - data-config
-
-- name: Run the systemd mount role
-  include_role:
-    name: systemd_mount
-  vars:
-    systemd_mounts:
-      - what: "/dev/{{ _bootstrap_host_data_disk_device }}2"
+      - what: "/dev/{{ _bootstrap_host_data_partition_devices[1] }}"
         where: "{{ bootstrap_host_data_disk2_path }}"
         type: "{{ bootstrap_host_data_disk2_fs }}"
         options: "{{ bootstrap_host_data_disk2_fs_mount_options }}"
-        state: 'started'
-        enabled: true
-  when:
-    - lxc_container_backing_store != 'lvm'
-    - lxc_container_backing_store != 'zfs'
+        state: "{{ (_lxc_container_backing_store != 'lvm' and _lxc_container_backing_store != 'zfs') | ternary('started', 'stopped') }}"
+        enabled: "{{ (_lxc_container_backing_store != 'lvm' and _lxc_container_backing_store != 'zfs') | bool }}"
   tags:
     - data-config
 
-- name: Create the ZFS pool
-  command: zpool create pool "/dev/{{ _bootstrap_host_data_disk_device }}2"
-  args:
-    creates: /pool
-  when:
-    - bootstrap_host_data_disk_device_force | bool
-    - lxc_container_backing_store == 'zfs'
+- name: Prepare disk drive as ZFS
+  when: _lxc_container_backing_store == 'zfs'
+  block:
+    - name: Install zfs packages
+      ansible.builtin.package:
+        name: "{{ packages_install_zfs }}"
+        state: present
+        update_cache: "{{ (ansible_facts['pkg_mgr'] == 'apt') | ternary('yes', omit) }}"
+      tags:
+        - install-packages
 
-- name: Create the ZFS pool/lxc volume
-  shell: "(zfs list | grep lxc) || zfs create -o mountpoint=/var/lib/lxc pool/lxc"
-  when:
-    - bootstrap_host_data_disk_device_force | bool
-    - lxc_container_backing_store == 'zfs'
-  tags:
-    - skip_ansible_lint
+    - name: Create the ZFS pool
+      ansible.builtin.command: zpool create osa-test-pool "/dev/{{ _bootstrap_host_data_partition_devices[1] }}"
+      args:
+        creates: /osa-test-pool
+      when:
+        - bootstrap_host_data_disk_device_force | bool
 
-- name: Make LVM physical volume on the cinder device
-  shell: "pvcreate /dev/{{ _bootstrap_host_data_disk_device }}2 && touch /openstack/lxc.pvcreate"
-  args:
-    creates: "/openstack/lxc.pvcreate"
-  when:
-    - lxc_container_backing_store == 'lvm'
-  tags:
-    - skip_ansible_lint
-    - data-config
+    - name: Create the ZFS osa-test-pool/lxc volume
+      ansible.builtin.shell: "(zfs list | grep lxc) || zfs create -o mountpoint=/var/lib/lxc osa-test-pool/lxc"
+      when:
+        - bootstrap_host_data_disk_device_force | bool
+      tags:
+        - skip_ansible_lint
 
-- name: Run pvscan
-  command: "pvscan"
-  changed_when: false
-  when:
-    - lxc_container_backing_store == 'lvm'
-  tags:
-    - cinder-lvm-pv
-
-- name: Add cinder-volumes volume group
-  lvg:
+- name: Prepare disk drive as LVM
+  community.general.lvg:
     vg: lxc
-    pvs: "/dev/{{ _bootstrap_host_data_disk_device }}2"
-  when:
-    - lxc_container_backing_store == 'lvm'
+    pvs: "/dev/{{ _bootstrap_host_data_partition_devices[1] }}"
   tags:
     - data-config
+  when: _lxc_container_backing_store == 'lvm'

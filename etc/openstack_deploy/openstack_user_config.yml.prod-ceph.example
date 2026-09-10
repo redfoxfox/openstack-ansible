@@ -1,6 +1,6 @@
 ---
 cidr_networks: &cidr_networks
-  container: 172.29.236.0/22
+  management: 172.29.236.0/22
   tunnel: 172.29.240.0/22
   storage: 172.29.244.0/22
 
@@ -26,12 +26,12 @@ global_overrides:
         container_bridge: "br-mgmt"
         container_type: "veth"
         container_interface: "eth1"
-        ip_from_q: "container"
+        ip_from_q: "management"
         type: "raw"
         group_binds:
           - all_containers
           - hosts
-        is_container_address: true
+        is_management_address: true
     - network:
         container_bridge: "br-vxlan"
         container_type: "veth"
@@ -41,25 +41,25 @@ global_overrides:
         range: "1:1000"
         net_name: "vxlan"
         group_binds:
-          - neutron_linuxbridge_agent
+          - neutron_openvswitch_agent
     - network:
         container_bridge: "br-vlan"
         container_type: "veth"
         container_interface: "eth12"
         host_bind_override: "eth12"
         type: "flat"
-        net_name: "flat"
+        net_name: "physnet1"
         group_binds:
-          - neutron_linuxbridge_agent
+          - neutron_openvswitch_agent
     - network:
         container_bridge: "br-vlan"
         container_type: "veth"
         container_interface: "eth11"
         type: "vlan"
         range: "101:200,301:400"
-        net_name: "vlan"
+        net_name: "physnet2"
         group_binds:
-          - neutron_linuxbridge_agent
+          - neutron_openvswitch_agent
     - network:
         container_bridge: "br-storage"
         container_type: "veth"
@@ -70,8 +70,10 @@ global_overrides:
           - glance_api
           - cinder_api
           - cinder_volume
+          - manila_share
           - nova_compute
-          - ceph-osd
+          - ceph_mon
+          - ceph_osd
 
 ###
 ### Infrastructure
@@ -92,7 +94,7 @@ compute_hosts: &compute_hosts
   compute2:
     ip: 172.29.236.17
 
-ceph-osd_hosts:
+ceph_osd_hosts:
   osd1:
     ip: 172.29.236.18
   osd2:
@@ -101,23 +103,27 @@ ceph-osd_hosts:
     ip: 172.29.236.20
 
 # galera, memcache, rabbitmq, utility
-shared-infra_hosts: *infrastructure_hosts
+shared_infra_hosts: *infrastructure_hosts
 
-# ceph-mon containers
-ceph-mon_hosts: *infrastructure_hosts
+# zookeeper
+coordination_hosts: *infrastructure_hosts
+
+# ceph_mon containers
+ceph_mon_hosts: *infrastructure_hosts
+
+# ceph_mds containers
+ceph_mds_hosts: *infrastructure_hosts
+
+# ganesha-nfs hosts
+ceph_nfs_hosts: *infrastructure_hosts
 
 # repository (apt cache, python packages, etc)
-repo-infra_hosts: *infrastructure_hosts
+repo_infra_hosts: *infrastructure_hosts
 
 # load balancer
 # Ideally the load balancer should not use the Infrastructure hosts.
 # Dedicated hardware is best for improved performance and security.
-haproxy_hosts: *infrastructure_hosts
-
-# rsyslog server
-log_hosts:
-  log1:
-    ip: 172.29.236.14
+load_balancer_hosts: *infrastructure_hosts
 
 ###
 ### OpenStack
@@ -127,7 +133,7 @@ log_hosts:
 identity_hosts: *infrastructure_hosts
 
 # cinder api services
-storage-infra_hosts: *infrastructure_hosts
+storage_infra_hosts: *infrastructure_hosts
 
 # cinder volume hosts (Ceph RBD-backed)
 storage_hosts: *infrastructure_hosts
@@ -135,8 +141,11 @@ storage_hosts: *infrastructure_hosts
 # glance
 image_hosts: *infrastructure_hosts
 
+# placement
+placement_infra_hosts: *infrastructure_hosts
+
 # nova api, conductor, etc services
-compute-infra_hosts: *infrastructure_hosts
+compute_infra_hosts: *infrastructure_hosts
 
 # heat
 orchestration_hosts: *infrastructure_hosts
@@ -148,13 +157,17 @@ dashboard_hosts: *infrastructure_hosts
 network_hosts: *infrastructure_hosts
 
 # ceilometer (telemetry data collection)
-metering-infra_hosts: *infrastructure_hosts
+metering_infra_hosts: *infrastructure_hosts
 
 # aodh (telemetry alarm service)
-metering-alarm_hosts: *infrastructure_hosts
+metering_alarm_hosts: *infrastructure_hosts
 
 # gnocchi (telemetry metrics storage)
 metrics_hosts: *infrastructure_hosts
 
+# manila (share service)
+manila_infra_hosts: *infrastructure_hosts
+manila_data_hosts: *infrastructure_hosts
+
 # ceilometer compute agent (telemetry data collection)
-metering-compute_hosts: *compute_hosts
+metering_compute_hosts: *compute_hosts

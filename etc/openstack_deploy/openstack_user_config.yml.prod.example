@@ -1,6 +1,6 @@
 ---
 cidr_networks:
-  container: 172.29.236.0/22
+  management: 172.29.236.0/22
   tunnel: 172.29.240.0/22
   storage: 172.29.244.0/22
 
@@ -25,40 +25,40 @@ global_overrides:
         container_bridge: "br-mgmt"
         container_type: "veth"
         container_interface: "eth1"
-        ip_from_q: "container"
+        ip_from_q: "management"
         type: "raw"
         group_binds:
           - all_containers
           - hosts
-        is_container_address: true
+        is_management_address: true
     - network:
         container_bridge: "br-vxlan"
         container_type: "veth"
         container_interface: "eth10"
         ip_from_q: "tunnel"
-        type: "vxlan"
+        type: "geneve"
         range: "1:1000"
-        net_name: "vxlan"
+        net_name: "geneve"
         group_binds:
-          - neutron_linuxbridge_agent
+          - neutron_ovn_controller
     - network:
         container_bridge: "br-vlan"
         container_type: "veth"
         container_interface: "eth12"
         host_bind_override: "eth12"
         type: "flat"
-        net_name: "flat"
+        net_name: "physnet1"
         group_binds:
-          - neutron_linuxbridge_agent
+          - neutron_ovn_controller
     - network:
         container_bridge: "br-vlan"
         container_type: "veth"
         container_interface: "eth11"
         type: "vlan"
         range: "101:200,301:400"
-        net_name: "vlan"
+        net_name: "physnet2"
         group_binds:
-          - neutron_linuxbridge_agent
+          - neutron_ovn_controller
     - network:
         container_bridge: "br-storage"
         container_type: "veth"
@@ -76,22 +76,25 @@ global_overrides:
 ###
 
 # galera, memcache, rabbitmq, utility
-shared-infra_hosts:
+shared_infra_hosts:
   infra1:
     ip: 172.29.236.11
-    container_vars:
-      # Optional | Example setting the container_tech for a target host.
-      container_tech: lxc
   infra2:
     ip: 172.29.236.12
-    container_vars:
-      # Optional | Example setting the container_tech for a target host.
-      container_tech: nspawn
+  infra3:
+    ip: 172.29.236.13
+
+# zookeeper
+coordination_hosts:
+  infra1:
+    ip: 172.29.236.11
+  infra2:
+    ip: 172.29.236.12
   infra3:
     ip: 172.29.236.13
 
 # repository (apt cache, python packages, etc)
-repo-infra_hosts:
+repo_infra_hosts:
   infra1:
     ip: 172.29.236.11
   infra2:
@@ -102,18 +105,13 @@ repo-infra_hosts:
 # load balancer
 # Ideally the load balancer should not use the Infrastructure hosts.
 # Dedicated hardware is best for improved performance and security.
-haproxy_hosts:
+load_balancer_hosts:
   infra1:
     ip: 172.29.236.11
   infra2:
     ip: 172.29.236.12
   infra3:
     ip: 172.29.236.13
-
-# rsyslog server
-log_hosts:
-  log1:
-    ip: 172.29.236.14
 
 ###
 ### OpenStack
@@ -129,7 +127,7 @@ identity_hosts:
     ip: 172.29.236.13
 
 # cinder api services
-storage-infra_hosts:
+storage_infra_hosts:
   infra1:
     ip: 172.29.236.11
   infra2:
@@ -147,35 +145,41 @@ image_hosts:
     ip: 172.29.236.11
     container_vars:
       limit_container_types: glance
-      glance_nfs_client:
-        - server: "172.29.244.15"
-          remote_path: "/images"
-          local_path: "/var/lib/glance/images"
+      glance_remote_client:
+        - what: "172.29.244.15:/images"
+          where: "/var/lib/glance/images"
           type: "nfs"
           options: "_netdev,auto"
   infra2:
     ip: 172.29.236.12
     container_vars:
       limit_container_types: glance
-      glance_nfs_client:
-        - server: "172.29.244.15"
-          remote_path: "/images"
-          local_path: "/var/lib/glance/images"
+      glance_remote_client:
+        - what: "172.29.244.15:/images"
+          where: "/var/lib/glance/images"
           type: "nfs"
           options: "_netdev,auto"
   infra3:
     ip: 172.29.236.13
     container_vars:
       limit_container_types: glance
-      glance_nfs_client:
-        - server: "172.29.244.15"
-          remote_path: "/images"
-          local_path: "/var/lib/glance/images"
+      glance_remote_client:
+        - what: "172.29.244.15:/images"
+          where: "/var/lib/glance/images"
           type: "nfs"
           options: "_netdev,auto"
 
+# placement
+placement_infra_hosts:
+  infra1:
+    ip: 172.29.236.11
+  infra2:
+    ip: 172.29.236.12
+  infra3:
+    ip: 172.29.236.13
+
 # nova api, conductor, etc services
-compute-infra_hosts:
+compute_infra_hosts:
   infra1:
     ip: 172.29.236.11
   infra2:
@@ -201,8 +205,8 @@ dashboard_hosts:
   infra3:
     ip: 172.29.236.13
 
-# neutron server, agents (L3, etc)
-network_hosts:
+# neutron api
+network_infra_hosts:
   infra1:
     ip: 172.29.236.11
   infra2:
@@ -210,8 +214,25 @@ network_hosts:
   infra3:
     ip: 172.29.236.13
 
+network_northd_hosts:
+  infra1:
+    ip: 172.29.236.11
+  infra2:
+    ip: 172.29.236.12
+  infra3:
+    ip: 172.29.236.13
+
+# neutron ovn controller
+network_gateway_hosts:
+  net1:
+    ip: 172.29.236.21
+  net2:
+    ip: 172.29.236.22
+  net3:
+    ip: 172.29.236.23
+
 # ceilometer (telemetry data collection)
-metering-infra_hosts:
+metering_infra_hosts:
   infra1:
     ip: 172.29.236.11
   infra2:
@@ -220,7 +241,7 @@ metering-infra_hosts:
     ip: 172.29.236.13
 
 # aodh (telemetry alarm service)
-metering-alarm_hosts:
+metering_alarm_hosts:
   infra1:
     ip: 172.29.236.11
   infra2:
@@ -245,7 +266,7 @@ compute_hosts:
     ip: 172.29.236.17
 
 # ceilometer compute agent (telemetry data collection)
-metering-compute_hosts:
+metering_compute_hosts:
   compute1:
     ip: 172.29.236.16
   compute2:

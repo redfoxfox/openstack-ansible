@@ -2,31 +2,32 @@ Running ad-hoc Ansible plays
 ============================
 
 Being familiar with running ad-hoc Ansible commands is helpful when
-operating your OpenStack-Ansible deployment. For example, if we look at the
-structure of the following ansible command:
+operating your OpenStack-Ansible deployment. For a review, we can look at the
+structure of the following Ansible command:
 
 .. code-block:: console
 
    $ ansible example_group -m shell -a 'hostname'
 
 This command calls on Ansible to run the ``example_group`` using
-the ``-m`` shell module with the ``-a`` argument being the hostname command.
-You can substitute the group for any other groups you may have defined. For
-example, if you had ``compute_hosts`` in one group and
-``infra_hosts`` in  another, supply either group name and run the
-commands. You can also use the ``*`` wild card if you only know the first part
-of the group name, for example,  ``compute_h*``. The ``-m`` argument is for
-module.
+the ``-m`` shell module with the ``-a`` argument which is the hostname command.
+You can substitute example_group for any groups you may have defined. For
+example, if you had ``compute_hosts`` in one group and ``infra_hosts`` in
+another, supply either group name and run the command. You can also use the
+``*`` wild card if you only know the first part of the group name, for
+instance if you know the group name starts with compute you would use
+``compute_h*``. The ``-m`` argument is for module.
 
-Modules can be used to control system resources, or handle the execution of
-system commands. For a more information about modules , see
+Modules can be used to control system resources or handle the execution of
+system commands. For more information about modules, see
 `Module Index <https://docs.ansible.com/ansible/modules_by_category.html>`_ and
 `About Modules <https://docs.ansible.com/ansible/modules.html>`_.
 
 If you need to run a particular command against a subset of a group, you
 could use the limit flag ``-l``. For example, if a ``compute_hosts`` group
 contained ``compute1``, ``compute2``, ``compute3``, and ``compute4``, and you
-only needed to execute a command on ``compute1`` and ``compute4``:
+only needed to execute a command on ``compute1`` and ``compute4`` you could
+limit the command as follows:
 
 .. code-block:: console
 
@@ -41,8 +42,8 @@ only needed to execute a command on ``compute1`` and ``compute4``:
    Run the ad-hoc Ansible commands from the ``openstack-ansible/playbooks``
    directory.
 
-For more information, see `Inventory <https://docs.ansible.com/ansible/intro_inventory.html>`_
-and `Patterns <https://docs.ansible.com/ansible/intro_patterns.html>`_.
+For more information, see `Inventory <https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html>`_
+and `Patterns <https://docs.ansible.com/ansible/latest/inventory_guide/intro_patterns.html>`_.
 
 Running the shell module
 ------------------------
@@ -63,7 +64,7 @@ To check on the status of your Galera cluster:
 
 .. code-block:: console
 
-   $ ansible galera_container -m shell -a "mysql -h 127.0.0.1\
+   $ ansible galera_container -m shell -a "mariadb \
    -e 'show status like \"%wsrep_cluster_%\";'"
 
 When a module is being used as an ad-hoc command, there are a few parameters
@@ -75,40 +76,36 @@ to :command:`chdir=/home/user ls` when running Ansible from the CLI:
    $ ansible compute_hosts -m shell -a 'ls -la /home/user'
 
 For more information, see `shell - Execute commands in nodes
-<https://docs.ansible.com/ansible/shell_module.html>`_.
+<https://docs.ansible.com/ansible/latest/collections/ansible/builtin/shell_module.html>`_.
 
 Running the copy module
 -----------------------
 
-The copy module copies a file on a local machine to remote locations. Use the
-fetch module to copy files from remote locations to the local machine. If you
-need variable interpolation in copied files, use the template module. For more
-information, see `copy - Copies files to remote locations
-<https://docs.ansible.com/ansible/copy_module.html>`_.
+The copy module copies a file on a local machine to remote locations. To copy
+files from remote locations to the local machine you would use the fetch
+module. If you need variable interpolation in copied files, use the template
+module. For more information, see `copy - Copies files to remote locations
+<https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html>`_.
 
 The following example shows how to move a file from your deployment host to the
 ``/tmp`` directory on a set of remote machines:
 
 .. code-block:: console
 
-   $ ansible remote_machines -m copy -a 'src=/root/FILE \
-   dest=/tmp/FILE'
+   $ ansible remote_machines -m copy -a 'src=/root/FILE '\
+   'dest=/tmp/FILE'
 
-If you want to gather files from remote machines, use the fetch module. The
-fetch module stores files locally in a file tree, organized by the hostname
-from remote machines and stores them locally in a file tree, organized by
-hostname.
+The fetch module gathers files from remote machines and stores the files
+locally in a file tree, organized by the hostname.
 
 .. note::
 
     This module transfers log files that might not be present, so a missing
     remote file will not be an error unless ``fail_on_missing`` is set to
-    ``yes``.
-
+    ``true``.
 
 The following examples shows the :file:`nova-compute.log` file being pulled
 from a single Compute host:
-
 
 .. code-block:: console
 
@@ -128,11 +125,9 @@ from a single Compute host:
 Using tags
 ----------
 
-Tags are similar to the limit flag for groups except tags are used to only run
+Tags are similar to the limit flag for groups, except tags are used to only run
 specific tasks within a playbook. For more information on tags, see
-`Tags <http://ansible-docs.readthedocs.io/zh/stable-2.0/rst/playbooks_tags.html>`_
-and `Understanding ansible tags
-<http://www.caphrim.net/ansible/2015/05/24/understanding-ansible-tags.html>`_.
+`Tags <https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_tags.html>`_.
 
 Ansible forks
 -------------
@@ -142,10 +137,17 @@ fork makes use of a session. By default, Ansible sets the number of forks to
 5. However, you can increase the number of forks used in order to improve
 deployment performance in large environments.
 
-Note that more than 10 forks will cause issues for any playbooks
-which use ``delegate_to`` or ``local_action`` in the tasks. It is
-recommended that the number of forks are not raised when executing against the
-control plane, as this is where delegation is most often used.
+Note that more than 10 forks will cause issues for any playbooks which use
+``delegate_to`` or ``local_action`` in the tasks. It is recommended that the
+number of forks are not raised when executing against the control plane, as
+this is where delegation is most often used.
+
+When increasing the number of Ansible forks in, particularly beyond 10,
+SSH connection issues can arise due to the default sshd setting
+MaxStartups 10:30:100. This setting limits the number of simultaneous
+unauthenticated SSH connections to 10, after which new connection attempts
+start getting dropped probabilistically — with a 30% chance initially,
+increasing linearly up to 100% as the number of connections approaches 100.
 
 The number of forks used may be changed on a permanent basis by including
 the appropriate change to the ``ANSIBLE_FORKS`` in your ``.bashrc`` file.
@@ -161,10 +163,6 @@ nodes with 50 forks.
 
 For more information about forks, please see the following references:
 
-* OpenStack-Ansible `Bug 1479812`_
 * Ansible `forks`_ entry for ansible.cfg
-* `Ansible Performance Tuning`_
 
-.. _Bug 1479812: https://bugs.launchpad.net/openstack-ansible/+bug/1479812
 .. _forks: https://docs.ansible.com/ansible/latest/cli/ansible-playbook.html#cmdoption-ansible-playbook-f
-.. _Ansible Performance Tuning: https://www.ansible.com/blog/ansible-performance-tuning

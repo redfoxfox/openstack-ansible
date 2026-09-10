@@ -16,152 +16,377 @@
     name: openstack-ansible-deploy-base-jobs
     check:
       jobs:
-        - openstack-ansible-linters
         - openstack-ansible-varstest-aio
+        - openstack-ansible-shastest-metal
+        - openstack-ansible-tox-inventory
+        - openstack-ansible-deploy-infra_lxc-validate
+        - openstack-ansible-deploy-hosts_lxc-validate
         - openstack-tox-docs
     gate:
       jobs:
-        - openstack-ansible-linters
         - openstack-ansible-varstest-aio
+        - openstack-ansible-shastest-metal
+        - openstack-ansible-tox-inventory
+        - openstack-ansible-deploy-infra_lxc-validate
+        - openstack-ansible-deploy-hosts_lxc-validate
         - openstack-tox-docs
-    periodic:
-      jobs:
-        - openstack-ansible-deploy-translations-ubuntu-bionic
     experimental:
       jobs:
-        - openstack-ansible-deploy-aio_nspawn-ubuntu-bionic
-        - openstack-ansible-deploy-aio_qdrouterd-ubuntu-bionic
-        - openstack-ansible-deploy_with_ansible_devel-aio-ubuntu-bionic
-        - openstack-ansible-deploy_with_ansible_next-aio-ubuntu-bionic
+        - openstack-ansible-deploy_with_ansible_devel-aio-ubuntu-noble
 
 - project-template:
     name: openstack-ansible-deploy-aio_lxc-jobs
     check:
       jobs:
-        - openstack-ansible-deploy-aio_lxc-centos-7
-        - openstack-ansible-deploy-aio_lxc-debian-buster
-        - openstack-ansible-deploy-aio_lxc-ubuntu-bionic
+        - openstack-ansible-deploy-aio_lxc-centos-10-stream
+        - openstack-ansible-deploy-aio_lxc-debian-trixie
+        - openstack-ansible-deploy-aio_lxc-rockylinux-10
+        - openstack-ansible-deploy-aio_lxc-ubuntu-noble
+        - openstack-ansible-deploy-aio_lxc-ubuntu-resolute
     gate:
       jobs:
-        - openstack-ansible-deploy-aio_lxc-centos-7
-        - openstack-ansible-deploy-aio_lxc-debian-buster
-        - openstack-ansible-deploy-aio_lxc-ubuntu-bionic
+        - openstack-ansible-deploy-aio_lxc-centos-10-stream
+        - openstack-ansible-deploy-aio_lxc-debian-trixie
+        - openstack-ansible-deploy-aio_lxc-rockylinux-10
+        - openstack-ansible-deploy-aio_lxc-ubuntu-noble
+        - openstack-ansible-deploy-aio_lxc-ubuntu-resolute
     periodic:
       jobs:
-        - openstack-ansible-deploy-aio_lxc-ubuntu-bionic
-        - openstack-ansible-upgrade-aio_lxc-ubuntu-bionic
-    experimental:
+        - openstack-ansible-deploy-aio_lxc-ubuntu-noble
+        - openstack-ansible-deploy-aio_lxc-ubuntu-resolute
+        - openstack-ansible-deploy-aio_lxc-debian-trixie
+        - openstack-ansible-upgrade-aio_lxc-ubuntu-noble
+
+- project-template:
+    name: openstack-ansible-upgrade-infra_lxc-jobs
+    check:
       jobs:
-        - openstack-ansible-deploy-aio_lxc-opensuse-15
+        - openstack-ansible-upgrade-infra_lxc-ubuntu-noble
+    gate:
+      jobs:
+        - openstack-ansible-upgrade-infra_lxc-ubuntu-noble
+
+- project-template:
+    name: openstack-ansible-upgrade-aio_metal-jobs
+    check:
+      jobs:
+        - openstack-ansible-upgrade-aio_metal-rockylinux-10
+        - openstack-ansible-upgrade-aio_metal-ubuntu-noble
+    gate:
+      jobs:
+        - openstack-ansible-upgrade-aio_metal-rockylinux-10
+        - openstack-ansible-upgrade-aio_metal-ubuntu-noble
+
+- project-template:
+    name: openstack-ansible-deploy-k8sHA_lxc-jobs
+    check:
+      jobs:
+        - openstack-ansible-deploy-k8sHA_lxc-ubuntu-noble
+        - openstack-ansible-deploy-k8sHA_lxc-rockylinux-10
+        - openstack-ansible-deploy-k8sHA_lxc-debian-trixie
+    gate:
+      jobs:
+        - openstack-ansible-deploy-k8sHA_lxc-ubuntu-noble
+        - openstack-ansible-deploy-k8sHA_lxc-rockylinux-10
+        - openstack-ansible-deploy-k8sHA_lxc-debian-trixie
+    periodic:
+      jobs:
+        - openstack-ansible-deploy-k8sHA_lxc-ubuntu-noble
+
+- project-template:
+    name: openstack-ansible-deploy-infra_lxc-jobs
+    check:
+      jobs:
+        - openstack-ansible-deploy-infra_lxc-centos-10-stream
+        - openstack-ansible-deploy-infra_lxc-debian-trixie
+        - openstack-ansible-deploy-infra_lxc-rockylinux-10
+        - openstack-ansible-deploy-infra_lxc_tls-rockylinux-10
+        - openstack-ansible-deploy-infra_lxc-ubuntu-noble
+        - openstack-ansible-deploy-infra_lxc-ubuntu-resolute
+        - openstack-ansible-deploy-infra_lxc_stepca-ubuntu-noble
+        - openstack-ansible-deploy-infra_lxc_tls-ubuntu-noble
+    gate:
+      jobs:
+        - openstack-ansible-deploy-infra_lxc-centos-10-stream
+        - openstack-ansible-deploy-infra_lxc-debian-trixie
+        - openstack-ansible-deploy-infra_lxc-rockylinux-10
+        - openstack-ansible-deploy-infra_lxc_tls-rockylinux-10
+        - openstack-ansible-deploy-infra_lxc-ubuntu-noble
+        - openstack-ansible-deploy-infra_lxc-ubuntu-resolute
+        - openstack-ansible-deploy-infra_lxc_stepca-ubuntu-noble
+        - openstack-ansible-deploy-infra_lxc_tls-ubuntu-noble
+    periodic:
+      jobs:
+        - openstack-ansible-deploy-infra_lxc-ubuntu-noble
+
+- project-template:
+    name: openstack-ansible-deploy-infra_distro_lxc-jobs
+    check:
+      jobs:
+        - openstack-ansible-deploy-infra_distro_lxc-debian-trixie
+        - openstack-ansible-deploy-infra_distro_lxc-ubuntu-noble
+        - openstack-ansible-deploy-infra_distro_lxc-ubuntu-resolute
+    gate:
+      jobs:
+        - openstack-ansible-deploy-infra_distro_lxc-debian-trixie
+        - openstack-ansible-deploy-infra_distro_lxc-ubuntu-noble
+        - openstack-ansible-deploy-infra_distro_lxc-ubuntu-resolute
+
+- project-template:
+    name: openstack-ansible-deploy-hosts_lxc-jobs
+    check:
+      jobs:
+        - openstack-ansible-deploy-hosts_lxc-centos-10-stream
+        - openstack-ansible-deploy-hosts_lxc-debian-trixie
+        - openstack-ansible-deploy-hosts_lxc-rockylinux-10
+        - openstack-ansible-deploy-hosts_lxc-ubuntu-noble
+        - openstack-ansible-deploy-hosts_lxc-ubuntu-resolute
+    gate:
+      jobs:
+        - openstack-ansible-deploy-hosts_lxc-centos-10-stream
+        - openstack-ansible-deploy-hosts_lxc-debian-trixie
+        - openstack-ansible-deploy-hosts_lxc-rockylinux-10
+        - openstack-ansible-deploy-hosts_lxc-ubuntu-noble
+        - openstack-ansible-deploy-hosts_lxc-ubuntu-resolute
+    periodic:
+      jobs:
+        - openstack-ansible-deploy-hosts_lxc-ubuntu-noble
+
+- project-template:
+    name: openstack-ansible-deploy-hosts_metal-jobs
+    check:
+      jobs:
+        - openstack-ansible-deploy-hosts_metal-centos-10-stream
+        - openstack-ansible-deploy-hosts_metal-debian-trixie
+        - openstack-ansible-deploy-hosts_metal-rockylinux-10
+        - openstack-ansible-deploy-hosts_metal-ubuntu-noble
+        - openstack-ansible-deploy-hosts_metal-ubuntu-resolute
+    gate:
+      jobs:
+        - openstack-ansible-deploy-hosts_metal-centos-10-stream
+        - openstack-ansible-deploy-hosts_metal-debian-trixie
+        - openstack-ansible-deploy-hosts_metal-rockylinux-10
+        - openstack-ansible-deploy-hosts_metal-ubuntu-noble
+        - openstack-ansible-deploy-hosts_metal-ubuntu-resolute
+    periodic:
+      jobs:
+        - openstack-ansible-deploy-hosts_metal-ubuntu-noble
+
+- project-template:
+    name: openstack-ansible-deploy-hosts_distro_lxc-jobs
+    check:
+      jobs:
+        - openstack-ansible-deploy-hosts_distro_lxc-ubuntu-noble
+        - openstack-ansible-deploy-hosts_distro_lxc-ubuntu-resolute
+    gate:
+      jobs:
+        - openstack-ansible-deploy-hosts_distro_lxc-ubuntu-noble
+        - openstack-ansible-deploy-hosts_distro_lxc-ubuntu-resolute
 
 - project-template:
     name: openstack-ansible-deploy-aio_distro_lxc-jobs
     experimental:
       jobs:
-        - openstack-ansible-deploy-aio_distro_lxc-centos-7
-        - openstack-ansible-deploy-aio_distro_lxc-opensuse-15
-        - openstack-ansible-deploy-aio_distro_lxc-ubuntu-bionic
+        - openstack-ansible-deploy-aio_distro_lxc-debian-trixie
+        - openstack-ansible-deploy-aio_distro_lxc-ubuntu-noble
+        - openstack-ansible-deploy-aio_distro_lxc-ubuntu-resolute
+
+- project-template:
+    name: openstack-ansible-deploy-aio_tls-jobs
+    check:
+      jobs:
+        - openstack-ansible-deploy-aio_tls-rockylinux-10
+        - openstack-ansible-deploy-aio_tls-ubuntu-noble
+    gate:
+      jobs:
+        - openstack-ansible-deploy-aio_tls-rockylinux-10
+        - openstack-ansible-deploy-aio_tls-ubuntu-noble
 
 - project-template:
     name: openstack-ansible-deploy-aio_metal-jobs
     check:
       jobs:
-        - openstack-ansible-deploy-aio_metal-debian-buster
-        - openstack-ansible-deploy-aio_metal-centos-7
-        - openstack-ansible-deploy-aio_metal-opensuse-15
-        - openstack-ansible-deploy-aio_metal-ubuntu-bionic
-        - openstack-ansible-upgrade-aio_metal-centos-7:
-            voting: false
-        - openstack-ansible-upgrade-aio_metal-ubuntu-bionic
+        - openstack-ansible-deploy-aio_metal-centos-10-stream
+        - openstack-ansible-deploy-aio_metal-debian-trixie
+        - openstack-ansible-deploy-aio_metal-rockylinux-10
+        - openstack-ansible-deploy-aio_metal_tls-rockylinux-10
+        - openstack-ansible-deploy-aio_metal-ubuntu-noble
+        - openstack-ansible-deploy-aio_metal-ubuntu-resolute
+        - openstack-ansible-deploy-aio_metal_tls-ubuntu-noble
+        - openstack-ansible-upgrade-aio_metal-rockylinux-10
+        - openstack-ansible-upgrade-aio_metal-ubuntu-noble
+        - openstack-ansible-upgrade-aio_metal_tls-ubuntu-noble
     gate:
       jobs:
-        - openstack-ansible-deploy-aio_metal-debian-buster
-        - openstack-ansible-deploy-aio_metal-centos-7
-        - openstack-ansible-deploy-aio_metal-opensuse-15
-        - openstack-ansible-deploy-aio_metal-ubuntu-bionic
-        - openstack-ansible-upgrade-aio_metal-ubuntu-bionic
-    periodic:
-      jobs:
-        - openstack-ansible-deploy-aio_metal-opensuse-15
+        - openstack-ansible-deploy-aio_metal-centos-10-stream
+        - openstack-ansible-deploy-aio_metal-debian-trixie
+        - openstack-ansible-deploy-aio_metal-rockylinux-10
+        - openstack-ansible-deploy-aio_metal_tls-rockylinux-10
+        - openstack-ansible-deploy-aio_metal-ubuntu-noble
+        - openstack-ansible-deploy-aio_metal-ubuntu-resolute
+        - openstack-ansible-deploy-aio_metal_tls-ubuntu-noble
 
 - project-template:
     name: openstack-ansible-deploy-aio_telemetry_metal-jobs
     check:
       jobs:
-        - openstack-ansible-deploy-aio_telemetry_metal-centos-7
-        - openstack-ansible-deploy-aio_telemetry_metal-debian-buster
-        - openstack-ansible-deploy-aio_telemetry_metal-ubuntu-bionic
+        - openstack-ansible-deploy-aio_telemetry_metal-centos-10-stream
+        - openstack-ansible-deploy-aio_telemetry_metal-debian-trixie
+        - openstack-ansible-deploy-aio_telemetry_metal-rockylinux-10
+        - openstack-ansible-deploy-aio_telemetry_metal-ubuntu-noble
+        - openstack-ansible-deploy-aio_telemetry_metal-ubuntu-resolute
     gate:
       jobs:
-        - openstack-ansible-deploy-aio_telemetry_metal-centos-7
-        - openstack-ansible-deploy-aio_telemetry_metal-debian-buster
-        - openstack-ansible-deploy-aio_telemetry_metal-ubuntu-bionic
-    experimental:
-      jobs:
-        - openstack-ansible-deploy-aio_telemetry_metal-opensuse-15
+        - openstack-ansible-deploy-aio_telemetry_metal-centos-10-stream
+        - openstack-ansible-deploy-aio_telemetry_metal-debian-trixie
+        - openstack-ansible-deploy-aio_telemetry_metal-rockylinux-10
+        - openstack-ansible-deploy-aio_telemetry_metal-ubuntu-noble
+        - openstack-ansible-deploy-aio_telemetry_metal-ubuntu-resolute
 
 - project-template:
     name: openstack-ansible-deploy-aio_distro_metal-jobs
     check:
       jobs:
-        - openstack-ansible-deploy-aio_distro_metal-centos-7
-        - openstack-ansible-deploy-aio_distro_metal-opensuse-15:
-            voting: false
-        - openstack-ansible-deploy-aio_distro_metal-ubuntu-bionic
+        - openstack-ansible-deploy-aio_distro_metal-ubuntu-noble
+        - openstack-ansible-deploy-aio_distro_metal-ubuntu-resolute
     gate:
       jobs:
-        - openstack-ansible-deploy-aio_distro_metal-centos-7
-        - openstack-ansible-deploy-aio_distro_metal-ubuntu-bionic
-    periodic:
+        - openstack-ansible-deploy-aio_distro_metal-ubuntu-noble
+        - openstack-ansible-deploy-aio_distro_metal-ubuntu-resolute
+    experimental:
       jobs:
-        - openstack-ansible-deploy-aio_distro_metal-opensuse-15
+        - openstack-ansible-deploy-aio_distro_metal-debian-trixie
 
 - project-template:
-    name: openstack-ansible-deploy-aio_nspawn-jobs
+    name: openstack-ansible-deploy-nfs-jobs
     check:
       jobs:
-        - openstack-ansible-deploy-aio_nspawn-centos-7:
-            voting: false
-        - openstack-ansible-deploy-aio_nspawn-opensuse-15:
-            voting: false
-        - openstack-ansible-deploy-aio_nspawn-ubuntu-bionic:
-            voting: false
+        - openstack-ansible-deploy-aio_nfs-ubuntu-noble
     gate:
-      jobs: []
+      jobs:
+        - openstack-ansible-deploy-aio_nfs-ubuntu-noble
 
 - project-template:
     name: openstack-ansible-deploy-ceph-jobs
     check:
       jobs:
-        - openstack-ansible-deploy-aio_ceph-ubuntu-bionic
+        - openstack-ansible-deploy-aio_ceph-ubuntu-noble
     gate:
       jobs:
-        - openstack-ansible-deploy-aio_ceph-ubuntu-bionic
+        - openstack-ansible-deploy-aio_ceph-ubuntu-noble
     periodic:
       jobs:
-        - openstack-ansible-deploy-aio_ceph-ubuntu-bionic
-        - openstack-ansible-upgrade-aio_ceph-ubuntu-bionic
+        - openstack-ansible-deploy-aio_ceph-ubuntu-noble
+
+- project-template:
+    name: openstack-ansible-deploy-stepca-jobs
+    check:
+      jobs:
+        - openstack-ansible-deploy-aio_stepca-ubuntu-noble
+        - openstack-ansible-deploy-aio_metal_stepca-ubuntu-noble
+    gate:
+      jobs:
+        - openstack-ansible-deploy-aio_stepca-ubuntu-noble
+        - openstack-ansible-deploy-aio_metal_stepca-ubuntu-noble
+
+- project-template:
+    name: openstack-ansible-deploy-openbao-jobs
+    check:
+      jobs:
+        - openstack-ansible-deploy-aio_metal_openbao-ubuntu-noble
+    gate:
+      jobs:
+        - openstack-ansible-deploy-aio_metal_openbao-ubuntu-noble
 
 - project-template:
     name: openstack-ansible-deploy-proxy-jobs
     check:
       jobs:
-        - openstack-ansible-deploy-aio_proxy-ubuntu-bionic
+        - openstack-ansible-deploy-aio_proxy-ubuntu-noble
     gate:
       jobs:
-        - openstack-ansible-deploy-aio_proxy-ubuntu-bionic
-
-- project-template:
-    name: openstack-ansible-deploy-distro_ceph-jobs
-    experimental:
-      jobs:
-        - openstack-ansible-deploy-aio_distro_ceph-opensuse-15
+        - openstack-ansible-deploy-aio_proxy-ubuntu-noble
 
 - project-template:
     name: openstack-ansible-linters-jobs
     check:
       jobs:
-        - openstack-ansible-linters-ubuntu-bionic
+        - openstack-ansible-linters-ubuntu-noble
     gate:
       jobs:
-        - openstack-ansible-linters-ubuntu-bionic
+        - openstack-ansible-linters-ubuntu-noble
+
+- project-template:
+    name: openstack-ansible-lxc-backingstore-jobs
+    check:
+      jobs:
+        - openstack-ansible-deploy-hosts_lxc_zfs-ubuntu-noble
+        - openstack-ansible-deploy-hosts_lxc_btrfs-ubuntu-noble
+        - openstack-ansible-deploy-hosts_lxc_overlayfs-ubuntu-noble
+        - openstack-ansible-deploy-hosts_lxc_overlayfs-rockylinux-10
+        - openstack-ansible-deploy-hosts_lxc_btrfs-debian-trixie
+        - openstack-ansible-deploy-hosts_lxc_overlayfs-debian-trixie
+    gate:
+      jobs:
+        - openstack-ansible-deploy-hosts_lxc_zfs-ubuntu-noble
+        - openstack-ansible-deploy-hosts_lxc_btrfs-ubuntu-noble
+        - openstack-ansible-deploy-hosts_lxc_overlayfs-ubuntu-noble
+        - openstack-ansible-deploy-hosts_lxc_btrfs-debian-trixie
+        - openstack-ansible-deploy-hosts_lxc_overlayfs-debian-trixie
+        - openstack-ansible-deploy-hosts_lxc_overlayfs-rockylinux-10
+
+- project-template:
+    name: openstack-ansible-molecule
+    check:
+      jobs:
+        - openstack-ansible-tox-molecule-debian-trixie
+        - openstack-ansible-tox-molecule-ubuntu-noble
+        - openstack-ansible-tox-molecule-ubuntu-resolute
+        - openstack-ansible-tox-molecule-centos-10-stream
+        - openstack-ansible-tox-molecule-rockylinux-10:
+            voting: false
+    gate:
+      jobs:
+        - openstack-ansible-tox-molecule-debian-trixie
+        - openstack-ansible-tox-molecule-ubuntu-noble
+        - openstack-ansible-tox-molecule-ubuntu-resolute
+        - openstack-ansible-tox-molecule-centos-10-stream
+
+- project-template:
+    name: openstack-ansible-deploy-guide-jobs
+    description: |
+      Build the deploy-guide document and publish the result
+      using a promote job.
+    check:
+      jobs:
+        # NOTE(noonedeadpunk): We do not create a child job, since `promote-deploy-guide`
+        # is a final job and can not be parented. With that, it does define
+        # `download_artifact_job` which is expected to contain name of job where artifacts
+        # were produced and defaults to `build-openstack-deploy-guide`. So to avoid
+        # defining file trigger list in different files separately, it makes sense to
+        # pass these and vars to jobs themselves.
+        - build-openstack-deploy-guide:
+            files: &deploy-guide-triggers
+              - .gitreview
+              - ^doc/source/deploy-guide/.*
+              - ^doc/source/locale/.*/LC_MESSAGES/doc-deploy-guide.po
+              - ansible-role-requirements.yml
+              - bindep.txt
+              - doc/requirements.txt
+              - test-requirements.txt
+              - tox.ini
+            vars: &deploy-guide-vars
+              tox_pdf_envlist: deploy-guide-pdf-docs
+              tox_skip_pdf: false
+              sphinx_build_dir: doc/source/deploy-guide/build
+              sphinx_pdf_files:
+                - "deploy-guide-{{ zuul.project.short_name }}.pdf"
+    gate:
+      jobs:
+        - build-openstack-deploy-guide:
+            files: *deploy-guide-triggers
+            vars: *deploy-guide-vars
+    promote:
+      jobs:
+        - promote-deploy-guide:
+            files: *deploy-guide-triggers

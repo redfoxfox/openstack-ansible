@@ -20,12 +20,12 @@ The code is generally located into ``/opt/openstack-ansible``.
 OpenStack-Ansible wrapper
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Our ``openstack-ansible`` cli is located in ``/usr/bin/openstack-ansible``.
+Our ``openstack-ansible`` cli is located in ``/usr/local/bin/openstack-ansible``.
 It sources an environment variable file located in:
-``/usr/bin/openstack-ansible.rc``.
+``/usr/local/bin/openstack-ansible.rc``.
 
 Userspace configurations
-~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 All the userspace configurations are expected to be in
 ``/etc/openstack_deploy/``.
@@ -33,7 +33,7 @@ All the userspace configurations are expected to be in
 Ansible configuration
 =====================
 
-Ansible.cfg
+ansible.cfg
 ~~~~~~~~~~~
 
 There is no ``ansible.cfg`` provided with OpenStack-Ansible.
@@ -51,4 +51,4 @@ into the ansible roles folder.
 Inventory conventions
 ~~~~~~~~~~~~~~~~~~~~~
 
-Please confer to the inventory section of this reference.
+Please refer to the :ref:`inventory` section of this reference.

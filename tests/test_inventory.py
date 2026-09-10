@@ -13,7 +13,6 @@
 import collections
 import copy
 import json
-import mock
 import os
 from os import path
 try:
@@ -22,6 +21,7 @@ except ImportError:
     import queue as Queue
 import sys
 import unittest
+from unittest import mock
 import warnings
 import yaml
 
@@ -29,11 +29,10 @@ INV_DIR = 'inventory'
 
 sys.path.append(path.join(os.getcwd(), INV_DIR))
 
-from osa_toolkit import dictutils
-import dynamic_inventory
-from osa_toolkit import filesystem as fs
-from osa_toolkit import generate as di
-from osa_toolkit import tools
+from osa_toolkit import dictutils  # noqa: E402
+from osa_toolkit import filesystem as fs  # noqa: E402
+from osa_toolkit import generate as di  # noqa: E402
+from osa_toolkit import tools  # noqa: E402
 
 TARGET_DIR = path.join(os.getcwd(), 'tests', 'inventory')
 BASE_ENV_DIR = INV_DIR
@@ -46,7 +45,6 @@ USER_CONFIG_FILE = path.join(TARGET_DIR, 'openstack_user_config.yml')
 # They should be cleaned up between each test.
 CLEANUP = [
     'openstack_inventory.json',
-    'openstack_hostnames_ips.yml',
     'backup_openstack_inventory.tar'
 ]
 
@@ -71,6 +69,7 @@ def make_config():
     # Allow access here so we can populate the dictionary.
     global _BASE_CONFIG
 
+    os.makedirs(TARGET_DIR, exist_ok=True)
     _BASE_CONFIG = tools.make_example_config(AIO_CONFIG_FILE, CONFD)
 
     tools.write_example_config(USER_CONFIG_FILE, _BASE_CONFIG)
@@ -85,6 +84,7 @@ def tearDownModule():
     # This file should only be removed after all tests are run,
     # thus it is excluded from cleanup.
     os.remove(USER_CONFIG_FILE)
+    os.rmdir(TARGET_DIR)
 
 
 def cleanup():
@@ -103,7 +103,7 @@ def get_inventory(clean=True, extra_args=None):
     if extra_args:
         args.update(extra_args)
     try:
-        inventory_string = di.main(**args)
+        inventory_string = di.generate(**args)
         inventory = json.loads(inventory_string)
         return inventory
     finally:
@@ -115,16 +115,16 @@ def get_inventory(clean=True, extra_args=None):
 
 class TestArgParser(unittest.TestCase):
     def test_no_args(self):
-        arg_dict = dynamic_inventory.args([])
+        arg_dict = di.args([])
         self.assertIsNone(arg_dict['config'])
         self.assertEqual(arg_dict['list'], False)
 
     def test_list_arg(self):
-        arg_dict = dynamic_inventory.args(['--list'])
+        arg_dict = di.args(['--list'])
         self.assertEqual(arg_dict['list'], True)
 
     def test_config_arg(self):
-        arg_dict = dynamic_inventory.args(['--config',
+        arg_dict = di.args(['--config',
                                            '/etc/openstack_deploy'])
         self.assertEqual(arg_dict['config'], '/etc/openstack_deploy')
 
@@ -133,15 +133,24 @@ class TestAnsibleInventoryFormatConstraints(unittest.TestCase):
     inventory = None
 
     expected_groups = [
-        'aio1-host_containers',
+        'aio1_host_containers',
         'all',
         'all_containers',
+        'adjutant_all',
+        'adjutant_api',
+        'adjutant_container',
         'aodh_alarm_evaluator',
         'aodh_alarm_notifier',
         'aodh_all',
         'aodh_api',
         'aodh_container',
         'aodh_listener',
+        'backup_infra_all',
+        'backup_infra_containers',
+        'backup_infra_hosts',
+        'backup_runner_all',
+        'backup_runner_containers',
+        'backup_runner_hosts',
         'barbican_all',
         'barbican_api',
         'barbican_container',
@@ -154,22 +163,31 @@ class TestAnsibleInventoryFormatConstraints(unittest.TestCase):
         'ceilometer_agent_compute',
         'ceilometer_agent_notification',
         'ceilometer_central_container',
+        'ceilometer_compute_container',
         'ceph_all',
-        'ceph-mon_all',
-        'ceph-mon_containers',
-        'ceph-mon_container',
-        'ceph-mon_hosts',
-        'ceph-mon',
-        'ceph-osd_all',
-        'ceph-osd_containers',
-        'ceph-osd_container',
-        'ceph-osd_hosts',
-        'ceph-osd',
-        'ceph-rgw_all',
-        'ceph-rgw_containers',
-        'ceph-rgw_container',
-        'ceph-rgw_hosts',
-        'ceph-rgw',
+        'ceph_mon_all',
+        'ceph_mon_containers',
+        'ceph_mon_container',
+        'ceph_mon_hosts',
+        'ceph_mon',
+        'ceph_mds',
+        'ceph_mds_containers',
+        'ceph_mds_container',
+        'ceph_mds_hosts',
+        'ceph_osd_all',
+        'ceph_osd_containers',
+        'ceph_osd_container',
+        'ceph_osd_hosts',
+        'ceph_osd',
+        'ceph_rgw_all',
+        'ceph_rgw_containers',
+        'ceph_rgw_container',
+        'ceph_rgw_hosts',
+        'ceph_rgw',
+        'ceph_nfs',
+        'ceph_nfs_containers',
+        'ceph_nfs_container',
+        'ceph_nfs_hosts',
         'cinder_all',
         'cinder_api',
         'cinder_api_container',
@@ -177,15 +195,26 @@ class TestAnsibleInventoryFormatConstraints(unittest.TestCase):
         'cinder_scheduler',
         'cinder_volume',
         'cinder_volumes_container',
-        'compute-infra_all',
-        'compute-infra_containers',
-        'compute-infra_hosts',
+        'cloudkitty_all',
+        'cloudkitty_api',
+        'coordination_all',
+        'rating_containers',
+        'cloudkitty_container',
+        'cloudkitty_engine',
+        'rating_hosts',
+        'rating_all',
+        'cluster_api_all',
+        'cluster_api_containers',
+        'cluster_api_hosts',
+        'coordination_containers',
+        'coordination_hosts',
+        'compute_infra_all',
+        'compute_infra_containers',
+        'compute_infra_hosts',
         'compute_all',
         'compute_containers',
         'compute_hosts',
-        'congress_all',
-        'congress_container',
-        'congress_server',
+        'database_all',
         'dashboard_all',
         'dashboard_containers',
         'dashboard_hosts',
@@ -202,21 +231,17 @@ class TestAnsibleInventoryFormatConstraints(unittest.TestCase):
         'designate_worker',
         'designate_producer',
         'designate_sink',
-        'etcd',
-        'etcd_all',
-        'etcd_container',
-        'etcd_containers',
-        'etcd_hosts',
-        'event-infra_all',
-        'event-infra_containers',
-        'event-infra_hosts',
+        'freezer_all',
+        'freezer_api',
+        'freezer_api_container',
+        'freezer_scheduler',
+        'freezer_scheduler_container',
         'galera',
         'galera_all',
         'galera_container',
         'glance_all',
         'glance_api',
         'glance_container',
-        'glance_registry',
         'gnocchi_all',
         'gnocchi_api',
         'gnocchi_container',
@@ -226,6 +251,9 @@ class TestAnsibleInventoryFormatConstraints(unittest.TestCase):
         'haproxy_container',
         'haproxy_containers',
         'haproxy_hosts',
+        'load_balancer_containers',
+        'load_balancer_hosts',
+        'load_balancer_all',
         'heat_all',
         'heat_api',
         'heat_api_cfn',
@@ -241,113 +269,100 @@ class TestAnsibleInventoryFormatConstraints(unittest.TestCase):
         'image_all',
         'image_containers',
         'image_hosts',
-        'ironic-infra_all',
-        'ironic-infra_containers',
-        'ironic-infra_hosts',
-        'ironic-server_containers',
-        'ironic-server_hosts',
+        'ironic_infra_all',
+        'ironic_infra_containers',
+        'ironic_infra_hosts',
         'ironic_all',
         'ironic_api',
         'ironic_api_container',
         'ironic_conductor',
-        'ironic_server',
-        'ironic_server_container',
-        'ironic_servers',
+        'ironic_console',
         'ironic_compute',
         'ironic_compute_container',
-        'ironic-compute_containers',
-        'ironic-compute_all',
-        'ironic-compute_hosts',
-        'ironic-inspector_all',
+        'ironic_compute_containers',
+        'ironic_compute_all',
+        'ironic_compute_hosts',
+        'ironic_inspector_all',
         'ironic_inspector',
-        'ironic-inspector_containers',
-        'ironic-inspector_hosts',
+        'ironic_inspector_containers',
+        'ironic_inspector_hosts',
         'ironic_inspector_container',
-        'key-manager_containers',
-        'key-manager_hosts',
-        'key-manager_all',
+        'ironic_neutron_agent',
+        'k8s_all',
+        'k8s_capi',
+        'k8s_container',
+        'key_manager_containers',
+        'key_manager_hosts',
+        'key_manager_all',
         'keystone',
         'keystone_all',
         'keystone_container',
-        'kvm-compute_containers',
-        'kvm-compute_hosts',
-        'log_all',
-        'log_containers',
-        'log_hosts',
+        'kvm_compute_containers',
+        'kvm_compute_hosts',
         'lxc_hosts',
         'magnum',
-        'magnum-infra_all',
-        'magnum-infra_containers',
-        'magnum-infra_hosts',
+        'magnum_infra_all',
+        'magnum_infra_containers',
+        'magnum_infra_hosts',
         'magnum_all',
         'magnum_container',
         'manila_all',
         'manila_api',
         'manila_container',
         'manila_data',
-        'manila-data_all',
+        'manila_data_all',
         'manila_data_container',
-        'manila-data_containers',
-        'manila-data_hosts',
-        'manila-infra_all',
-        'manila-infra_containers',
-        'manila-infra_hosts',
+        'manila_data_containers',
+        'manila_data_hosts',
+        'manila_infra_all',
+        'manila_infra_containers',
+        'manila_infra_hosts',
         'manila_scheduler',
         'manila_share',
         'masakari_all',
         'masakari_api',
         'masakari_api_container',
         'masakari_engine',
-        'masakari-infra_all',
-        'masakari-infra_containers',
-        'masakari-infra_hosts',
+        'masakari_infra_all',
+        'masakari_infra_containers',
+        'masakari_infra_hosts',
         'masakari_monitor',
-        'masakari-monitor_containers',
+        'masakari_monitor_all',
+        'masakari_monitor_containers',
         'masakari_monitors_container',
-        'masakari-monitor_hosts',
-        'mistral-infra_all',
-        'mistral-infra_containers',
-        'mistral-infra_hosts',
+        'masakari_monitor_hosts',
+        'memcaching_all',
+        'mistral_infra_all',
+        'mistral_infra_containers',
+        'mistral_infra_hosts',
         'mistral_all',
         'mistral_container',
         'mistral_api',
         'mistral_engine',
         'mistral_executor',
         'mistral_notifier',
-        'murano-infra_all',
-        'murano-infra_containers',
-        'murano-infra_hosts',
-        'murano_all',
-        'murano_container',
-        'murano_api',
-        'murano_engine',
         'mano_all',
         'mano_containers',
         'mano_hosts',
-        'nspawn_hosts',
-        'octavia-infra_hosts',
+        'mq_all',
+        'octavia_infra_hosts',
         'octavia_all',
-        'octavia-api',
+        'octavia_api',
         'octavia_server_container',
-        'octavia-worker',
-        'octavia-housekeeping',
-        'octavia-health-manager',
-        'octavia-infra_containers',
-        'octavia-infra_all',
-        'panko_all',
-        'panko_api',
-        'panko_container',
-        'placement-infra_all',
-        'placement-infra_containers',
-        'placement-infra_hosts',
+        'octavia_worker',
+        'octavia_housekeeping',
+        'octavia_health_manager',
+        'octavia_infra_containers',
+        'octavia_infra_all',
+        'operator_all',
+        'placement_infra_all',
+        'placement_infra_containers',
+        'placement_infra_hosts',
         'placement_all',
         'placement_container',
         'placement_api',
-        'policy_all',
-        'policy_containers',
-        'policy_hosts',
-        'qemu-compute_containers',
-        'qemu-compute_hosts',
+        'qemu_compute_containers',
+        'qemu_compute_hosts',
         'reservation_all',
         'reservation_containers',
         'reservation_hosts',
@@ -356,24 +371,23 @@ class TestAnsibleInventoryFormatConstraints(unittest.TestCase):
         'trove_conductor',
         'trove_taskmanager',
         'trove_api_container',
-        'trove-infra_containers',
-        'trove-infra_hosts',
-        'trove-infra_all',
+        'trove_infra_containers',
+        'trove_infra_hosts',
+        'trove_infra_all',
         'memcached',
         'memcached_all',
         'memcached_container',
         'memcaching_containers',
         'memcaching_hosts',
-        'metering-alarm_all',
-        'metering-alarm_containers',
-        'metering-alarm_hosts',
-        'metering-compute_all',
-        'metering-compute_container',
-        'metering-compute_containers',
-        'metering-compute_hosts',
-        'metering-infra_all',
-        'metering-infra_containers',
-        'metering-infra_hosts',
+        'metering_alarm_all',
+        'metering_alarm_containers',
+        'metering_alarm_hosts',
+        'metering_compute_all',
+        'metering_compute_containers',
+        'metering_compute_hosts',
+        'metering_infra_all',
+        'metering_infra_containers',
+        'metering_infra_hosts',
         'metrics_all',
         'metrics_containers',
         'metrics_hosts',
@@ -382,16 +396,28 @@ class TestAnsibleInventoryFormatConstraints(unittest.TestCase):
         'network_all',
         'network_containers',
         'network_hosts',
+        'network_agent_containers',
+        'network_agent_hosts',
+        'network_gateway_containers',
+        'network_gateway_hosts',
+        'network_infra_containers',
+        'network_infra_hosts',
         'neutron_agent',
         'neutron_agents_container',
         'neutron_all',
         'neutron_bgp_dragent',
         'neutron_dhcp_agent',
         'neutron_l3_agent',
-        'neutron_linuxbridge_agent',
         'neutron_metadata_agent',
         'neutron_metering_agent',
+        'network_northd_containers',
+        'network_northd_hosts',
         'neutron_openvswitch_agent',
+        'neutron_ovn_controller',
+        'neutron_ovn_gateway',
+        'neutron_ovn_gateway_container',
+        'neutron_ovn_northd',
+        'neutron_ovn_northd_container',
         'neutron_sriov_nic_agent',
         'neutron_server',
         'neutron_server_container',
@@ -399,61 +425,53 @@ class TestAnsibleInventoryFormatConstraints(unittest.TestCase):
         'nova_api_metadata',
         'nova_api_os_compute',
         'nova_api_container',
-        'nova_api_placement',
         'nova_compute',
         'nova_compute_container',
         'nova_conductor',
         'nova_console',
         'nova_scheduler',
-        'opendaylight',
         'operator_containers',
         'operator_hosts',
         'orchestration_all',
         'orchestration_containers',
         'orchestration_hosts',
-        'os-infra_containers',
-        'os-infra_hosts',
-        'oslomsg-rpc_all',
-        'oslomsg-rpc_containers',
-        'oslomsg-rpc_hosts',
+        'os_infra_containers',
+        'os_infra_hosts',
         'pkg_repo',
-        'qdrouterd',
-        'qdrouterd_all',
-        'qdrouterd_container',
         'rabbit_mq_container',
         'rabbitmq',
         'rabbitmq_all',
+        'registration_all',
+        'registration_containers',
+        'registration_hosts',
         'remote',
         'remote_containers',
-        'repo-infra_all',
-        'repo-infra_containers',
-        'repo-infra_hosts',
+        'repo_infra_all',
+        'repo_infra_containers',
+        'repo_infra_hosts',
+        'repo_infra_all',
         'repo_all',
         'repo_container',
-        'rsyslog',
-        'rsyslog_all',
-        'rsyslog_container',
-        'sahara-infra_all',
-        'sahara-infra_containers',
-        'sahara-infra_hosts',
-        'sahara_all',
-        'sahara_api',
-        'sahara_container',
-        'sahara_engine',
-        'shared-infra_all',
-        'shared-infra_containers',
-        'shared-infra_hosts',
-        'storage-infra_all',
-        'storage-infra_containers',
-        'storage-infra_hosts',
+        'skyline',
+        'skyline_all',
+        'skyline_container',
+        'skyline_dashboard_containers',
+        'skyline_dashboard_hosts',
+        'skyline_dashboard_all',
+        'shared_infra_all',
+        'shared_infra_containers',
+        'shared_infra_hosts',
+        'storage_infra_all',
+        'storage_infra_containers',
+        'storage_infra_hosts',
         'storage_all',
         'storage_containers',
         'storage_hosts',
-        'swift-proxy_all',
-        'swift-proxy_containers',
-        'swift-proxy_hosts',
-        'swift-remote_containers',
-        'swift-remote_hosts',
+        'swift_proxy_all',
+        'swift_proxy_containers',
+        'swift_proxy_hosts',
+        'swift_remote_containers',
+        'swift_remote_hosts',
         'swift_acc',
         'swift_acc_container',
         'swift_all',
@@ -478,7 +496,21 @@ class TestAnsibleInventoryFormatConstraints(unittest.TestCase):
         'unbound_hosts',
         'utility',
         'utility_all',
-        'utility_container'
+        'utility_container',
+        'zookeeper',
+        'zookeeper_all',
+        'zookeeper_container',
+        'zun_infra_all',
+        'zun_infra_containers',
+        'zun_infra_hosts',
+        'zun_all',
+        'zun_api',
+        'zun_api_container',
+        'zun_compute',
+        'zun_compute_containers',
+        'zun_compute_hosts',
+        'zun_compute_all',
+        'zun_compute_container',
     ]
 
     @classmethod
@@ -494,6 +526,16 @@ class TestAnsibleInventoryFormatConstraints(unittest.TestCase):
         hostvars = self.inventory['_meta']['hostvars']
         self.assertIsNotNone(hostvars, "hostvars missing from _meta")
         self.assertIsInstance(hostvars, dict, "hostvars is not a dict")
+
+    def test_physical_host_addr_matches_ansible_host(self):
+        hostvars = self.inventory['_meta']['hostvars']
+        for host, vars in hostvars.items():
+            phys_host = vars.get('physical_host')
+            if phys_host and phys_host in hostvars:
+                self.assertEqual(
+                    vars.get('physical_host_addr'),
+                    hostvars[phys_host].get('ansible_host'),
+                    f"Host {host} has incorrect physical_host_addr mapping to {phys_host}")
 
     def test_group_vars_all(self):
         group_vars_all = self.inventory['all']
@@ -687,8 +729,11 @@ class TestConfigCheckBase(unittest.TestCase):
         user_defined_config[group][hostname]['ip'] = ip
         self.write_config()
 
-    def add_host(self, group, host_name, ip):
+    def add_host(self, group, host_name, ip, management_ip=None):
         self.user_defined_config[group][host_name] = {'ip': ip}
+        if management_ip:
+            self.user_defined_config[group][host_name].update(
+                {'management_ip': management_ip})
         self.write_config()
 
     def tearDown(self):
@@ -698,7 +743,7 @@ class TestConfigCheckBase(unittest.TestCase):
 
 class TestConfigChecks(TestConfigCheckBase):
     def test_missing_container_cidr_network(self):
-        self.delete_provider_network('container')
+        self.delete_provider_network('management')
         with self.assertRaises(SystemExit) as context:
             get_inventory()
         expectedLog = ("No container or management network specified in "
@@ -706,13 +751,13 @@ class TestConfigChecks(TestConfigCheckBase):
         self.assertEqual(str(context.exception), expectedLog)
 
     def test_management_network_malformed(self):
-        self.delete_provider_network_key('container', 'is_container_address')
+        self.delete_provider_network_key('management', 'is_management_address')
         self.write_config()
 
         with self.assertRaises(di.ProviderNetworkMisconfiguration) as context:
             get_inventory()
-        expectedLog = ("Provider network with queue 'container' "
-                       "requires 'is_container_address' "
+        expectedLog = ("Provider network with queue 'management' "
+                       "requires 'is_management_address' "
                        "to be set to True.")
         self.assertEqual(str(context.exception), expectedLog)
         self.restore_config()
@@ -755,7 +800,7 @@ class TestConfigChecks(TestConfigCheckBase):
         # Even with the same hash seed, different OSes get different results,
         # eg. local OS X vs gate's Linux
         config = collections.OrderedDict()
-        config['shared-infra_hosts'] = {
+        config['shared_infra_hosts'] = {
             'host1': {
                 'ip': '192.168.1.1'
             }
@@ -773,7 +818,7 @@ class TestConfigChecks(TestConfigCheckBase):
         self.assertEqual(context.exception.new_host, 'host2')
 
     def test_two_hosts_same_ip_externally(self):
-        self.set_new_hostname(self.user_defined_config, "haproxy_hosts",
+        self.set_new_hostname(self.user_defined_config, "load_balancer_hosts",
                               "aio1", "hap")
         with self.assertRaises(di.MultipleHostsWithOneIPError) as context:
             get_inventory()
@@ -785,7 +830,7 @@ class TestConfigChecks(TestConfigCheckBase):
     def test_one_host_two_ips_externally(self):
         # haproxy chosen because it was last in the config file as of
         # writing
-        self.set_new_ip(self.user_defined_config, 'haproxy_hosts', 'aio1',
+        self.set_new_ip(self.user_defined_config, 'load_balancer_hosts', 'aio1',
                         '172.29.236.101')
         with self.assertRaises(di.MultipleIpForHostError) as context:
             get_inventory()
@@ -798,7 +843,7 @@ class TestConfigChecks(TestConfigCheckBase):
         # Even with the same hash seed, different OSes get different results,
         # eg. local OS X vs gate's Linux
         config = collections.OrderedDict()
-        config['shared-infra_hosts'] = {
+        config['shared_infra_hosts'] = {
             'host1': {
                 'ip': '192.168.1.1'
             }
@@ -817,7 +862,7 @@ class TestConfigChecks(TestConfigCheckBase):
 
     def test_correct_hostname_ip_map(self):
         config = {
-            'shared-infra_hosts': {
+            'shared_infra_hosts': {
                 'host1': {
                     'ip': '192.168.1.1'
                 }
@@ -836,7 +881,7 @@ class TestStaticRouteConfig(TestConfigCheckBase):
     def setUp(self):
         super(TestStaticRouteConfig, self).setUp()
         self.expectedMsg = ("Static route provider network with queue "
-                            "'container' needs both 'cidr' and 'gateway' "
+                            "'management' needs both 'cidr' and 'gateway' "
                             "values.")
 
     def add_static_route(self, q_name, route_dict):
@@ -852,12 +897,12 @@ class TestStaticRouteConfig(TestConfigCheckBase):
     def test_setting_static_route(self):
         route_dict = {'cidr': '10.176.0.0/12',
                       'gateway': '172.29.248.1'}
-        self.add_static_route('container', route_dict)
+        self.add_static_route('management', route_dict)
         inventory = get_inventory()
 
-        # Use aio1 and 'container_address' since they're known keys.
+        # Use aio1 and 'management_address' since they're known keys.
         hostvars = inventory['_meta']['hostvars']['aio1']
-        cont_add = hostvars['container_networks']['container_address']
+        cont_add = hostvars['container_networks']['management_address']
 
         self.assertIn('static_routes', cont_add)
 
@@ -867,7 +912,7 @@ class TestStaticRouteConfig(TestConfigCheckBase):
 
     def test_setting_bad_static_route_only_cidr(self):
         route_dict = {'cidr': '10.176.0.0/12'}
-        self.add_static_route('container', route_dict)
+        self.add_static_route('management', route_dict)
 
         with self.assertRaises(di.MissingStaticRouteInfo) as context:
             get_inventory()
@@ -878,7 +923,7 @@ class TestStaticRouteConfig(TestConfigCheckBase):
 
     def test_setting_bad_static_route_only_gateway(self):
         route_dict = {'gateway': '172.29.248.1'}
-        self.add_static_route('container', route_dict)
+        self.add_static_route('management', route_dict)
 
         with self.assertRaises(di.MissingStaticRouteInfo) as context:
             get_inventory()
@@ -890,7 +935,7 @@ class TestStaticRouteConfig(TestConfigCheckBase):
     def test_setting_bad_gateway_value(self):
         route_dict = {'cidr': '10.176.0.0/12',
                       'gateway': None}
-        self.add_static_route('container', route_dict)
+        self.add_static_route('management', route_dict)
 
         with self.assertRaises(di.MissingStaticRouteInfo) as context:
             get_inventory()
@@ -902,7 +947,7 @@ class TestStaticRouteConfig(TestConfigCheckBase):
     def test_setting_bad_cidr_value(self):
         route_dict = {'cidr': None,
                       'gateway': '172.29.248.1'}
-        self.add_static_route('container', route_dict)
+        self.add_static_route('management', route_dict)
 
         with self.assertRaises(di.MissingStaticRouteInfo) as context:
             get_inventory()
@@ -914,7 +959,7 @@ class TestStaticRouteConfig(TestConfigCheckBase):
     def test_setting_bad_cidr_gateway_value(self):
         route_dict = {'cidr': None,
                       'gateway': None}
-        self.add_static_route('container', route_dict)
+        self.add_static_route('management', route_dict)
 
         with self.assertRaises(di.MissingStaticRouteInfo) as context:
             get_inventory()
@@ -963,7 +1008,7 @@ class TestGlobalOverridesConfigDeletion(TestConfigCheckBase):
         self.assertEqual('bar', self.inventory['all']['vars']['foo'])
 
     def test_container_cidr_key_retained(self):
-        user_cidr = self.user_defined_config['cidr_networks']['container']
+        user_cidr = self.user_defined_config['cidr_networks']['management']
         di._parse_global_variables(user_cidr, self.inventory,
                                    self.user_defined_config)
         self.assertIn('container_cidr', self.inventory['all']['vars'])
@@ -1010,6 +1055,15 @@ class TestEnsureInventoryUptoDate(unittest.TestCase):
 
         for required_key in di.REQUIRED_HOSTVARS:
             self.assertIn(required_key, self.host_vars['host1'])
+
+    def test_populating_physical_host_addr(self):
+        self.host_vars['phys1'] = {'ansible_host': '1.2.3.4'}
+        self.host_vars['cont1'] = {'physical_host': 'phys1'}
+
+        di._ensure_inventory_uptodate(self.inv, self.env['container_skel'])
+
+        self.assertIn('physical_host_addr', self.host_vars['cont1'])
+        self.assertEqual(self.host_vars['cont1']['physical_host_addr'], '1.2.3.4')
 
     def test_missing_container_name(self):
         self.host_vars['host1'] = {}
@@ -1085,7 +1139,6 @@ class TestOverridingEnvVars(OverridingEnvBase):
         # a partial override file
 
         vol = self.cinder_config['container_skel']['cinder_volumes_container']
-        keys = vol.keys()
         to_delete = []
         for key in vol.keys():
             if not key == 'properties':
@@ -1247,11 +1300,11 @@ class TestSetUsedIPS(unittest.TestCase):
 
 class TestConfigCheckFunctional(TestConfigCheckBase):
     def duplicate_ip(self):
-        ip = self.user_defined_config['log_hosts']['aio1']
-        self.user_defined_config['log_hosts']['bogus'] = ip
+        ip = self.user_defined_config['dashboard_hosts']['aio1']
+        self.user_defined_config['dashboard_hosts']['bogus'] = ip
 
     def test_checking_good_config(self):
-        output = di.main(config=TARGET_DIR, check=True,
+        output = di.generate(config=TARGET_DIR, check=True,
                          environment=BASE_ENV_DIR)
         self.assertEqual(output, 'Configuration ok!')
 
@@ -1259,21 +1312,21 @@ class TestConfigCheckFunctional(TestConfigCheckBase):
         self.duplicate_ip()
         self.write_config()
         with self.assertRaises(di.MultipleHostsWithOneIPError) as context:
-            di.main(config=TARGET_DIR, check=True, environment=BASE_ENV_DIR)
+            di.generate(config=TARGET_DIR, check=True, environment=BASE_ENV_DIR)
         self.assertEqual(context.exception.ip, '172.29.236.100')
 
 
 class TestNetworkEntry(unittest.TestCase):
     def test_all_args_filled(self):
-        entry = di.network_entry(True, 'eth1', 'br-mgmt', 'my_type', '1700')
-
+        entry = di.network_entry(True, 'eth1', 'br-mgmt', 'my_bridge', 'my_type', '1700')
         self.assertNotIn('interface', entry.keys())
         self.assertEqual(entry['bridge'], 'br-mgmt')
         self.assertEqual(entry['type'], 'my_type')
+        self.assertEqual(entry['bridge_type'], 'my_bridge')
         self.assertEqual(entry['mtu'], '1700')
 
     def test_container_dict(self):
-        entry = di.network_entry(False, 'eth1', 'br-mgmt', 'my_type', '1700')
+        entry = di.network_entry(False, 'eth1', 'br-mgmt', 'my_type', net_mtu='1700')
 
         self.assertEqual(entry['interface'], 'eth1')
 
@@ -1314,7 +1367,7 @@ class TestLxcHosts(TestConfigCheckBase):
         self.assertEqual(1, len(inventory['lxc_hosts']['hosts']))
 
     def test_lxc_hosts_members(self):
-        self.add_host('shared-infra_hosts', 'aio2', '172.29.236.101')
+        self.add_host('shared_infra_hosts', 'aio2', '172.29.236.101')
         inventory = get_inventory()
         self.assertIn('aio2', inventory['lxc_hosts']['hosts'])
         self.assertIn('aio1', inventory['lxc_hosts']['hosts'])
@@ -1334,7 +1387,7 @@ class TestLxcHosts(TestConfigCheckBase):
         inventory = get_inventory()
         # insert compute1 into lxc_hosts, which mimicks bug behavior
         inventory['lxc_hosts']['hosts'].append('compute1')
-        faked_path = INV_DIR
+        faked_path = TARGET_DIR
 
         with mock.patch('osa_toolkit.filesystem.load_inventory') as inv_mock:
             inv_mock.return_value = (inventory, faked_path)
@@ -1351,12 +1404,25 @@ class TestLxcHosts(TestConfigCheckBase):
 
         self.assertNotIn('lxc_hosts', inventory.keys())
 
-        faked_path = INV_DIR
+        faked_path = TARGET_DIR
         with mock.patch('osa_toolkit.filesystem.load_inventory') as inv_mock:
             inv_mock.return_value = (inventory, faked_path)
             new_inventory = get_inventory()
 
-        self.assertEqual(original_lxc_hosts, new_inventory['lxc_hosts'])
+        self.assertEqual(set(original_lxc_hosts['hosts']), set(new_inventory['lxc_hosts']['hosts']))
+
+    def test_lxc_host_management_ip(self):
+        """
+        If ssh network != mgmt network, management_ip should appear in
+        management_network, while ansible_host leave for SSH connection as is
+        """
+        ansible_host_address = '172.20.0.101'
+        management_address = '172.29.236.101'
+        self.add_host('shared_infra_hosts', 'aio2', ansible_host_address, management_address)
+        inventory = get_inventory()
+        hostvars = inventory['_meta']['hostvars']['aio2']
+        self.assertEqual(ansible_host_address, hostvars['ansible_host'])
+        self.assertEqual(management_address, hostvars['management_address'])
 
 
 class TestConfigMatchesEnvironment(unittest.TestCase):
@@ -1424,7 +1490,8 @@ class TestInventoryGroupConstraints(unittest.TestCase):
         # This should only work on groups, but stuff like '_meta' and 'all'
         # are in here, too.
         for key, values in inventory.items():
-            # The keys for children/hosts can exist, the important part is being empty lists.
+            # The keys for children/hosts can exist, the important part is
+            # being empty lists.
             has_children = bool(inventory.get('children'))
             has_hosts = bool(inventory.get('hosts'))
 
@@ -1435,6 +1502,11 @@ class TestInventoryGroupConstraints(unittest.TestCase):
         # bug #1646136
         override = """
             physical_skel:
+              compute_containers:
+                belongs_to:
+                - all_containers
+              compute_hosts:
+                - hosts
               local-compute_containers:
                 belongs_to:
                 - compute_containers
@@ -1461,7 +1533,6 @@ class TestInventoryGroupConstraints(unittest.TestCase):
         """Integration test making sure the whole script fails."""
         env = self._create_bad_env(self.env)
 
-
         config = get_config()
 
         kwargs = {
@@ -1473,7 +1544,7 @@ class TestInventoryGroupConstraints(unittest.TestCase):
             mocks['load_environment'].return_value = env
             mocks['load_user_configuration'].return_value = config
 
-            with self.assertRaises(di.GroupConflict) as context:
+            with self.assertRaises(di.GroupConflict):
                 get_inventory()
 
     def test_group_validation_unit(self):
@@ -1495,12 +1566,13 @@ class TestInventoryGroupConstraints(unittest.TestCase):
 
         self.assertTrue(result)
 
+
 class TestL3ProviderNetworkConfig(TestConfigCheckBase):
     def setUp(self):
         super(TestL3ProviderNetworkConfig, self).setUp()
-        self.delete_provider_network('container')
+        self.delete_provider_network('management')
         self.add_provider_network('pod1_container', '172.29.236.0/22')
-        self.add_provider_network_key('container', 'ip_from_q',
+        self.add_provider_network_key('management', 'ip_from_q',
                                       'pod1_container')
         self.add_provider_network_key('pod1_container', 'address_prefix',
                                       'management')
@@ -1513,15 +1585,215 @@ class TestL3ProviderNetworkConfig(TestConfigCheckBase):
         self.inventory = get_inventory()
 
     def test_address_prefix_name_applied(self):
-         aio2_host_vars = self.inventory['_meta']['hostvars']['aio2']
-         aio2_container_networks = aio2_host_vars['container_networks']
-         self.assertIsInstance(aio2_container_networks['management_address'],
-                               dict)
+        aio2_host_vars = self.inventory['_meta']['hostvars']['aio2']
+        aio2_container_networks = aio2_host_vars['container_networks']
+        self.assertIsInstance(aio2_container_networks['management_address'],
+                              dict)
 
     def test_host_outside_reference_group_excluded(self):
-         aio1_host_vars = self.inventory['_meta']['hostvars']['aio1']
-         aio1_container_networks = aio1_host_vars['container_networks']
-         self.assertNotIn('management_address', aio1_container_networks)
+        aio1_host_vars = self.inventory['_meta']['hostvars']['aio1']
+        aio1_container_networks = aio1_host_vars['container_networks']
+        self.assertNotIn('management_address', aio1_container_networks)
+
+
+class TestNestsGroups(TestConfigCheckBase):
+    def setUp(self):
+        super(TestNestsGroups, self).setUp()
+        self.nest_env_path = path.join(TARGET_DIR, 'env.d/az.yml')
+        self._create_nest_env()
+        self.add_config_key('nest_hosts', {})
+        self.add_host('nest_hosts', 'aio1', '172.29.236.100')
+        self.add_host('nest_hosts', 'aio2', '172.29.236.101')
+        self.add_host('compute_hosts', 'aio2', '172.29.236.101')
+        self.write_config()
+        self.inventory = get_inventory()
+
+    def tearDown(self):
+        os.remove(self.nest_env_path)
+        os.rmdir(os.path.dirname(self.nest_env_path))
+
+    def _create_nest_env(self):
+        data = """
+            component_skel:
+              nest_containers:
+                belongs_to:
+                  - nest_all
+              nest_hosts:
+                belongs_to:
+                  - nest_all
+
+            container_skel:
+              nest_containers:
+                properties:
+                  is_nest: True
+        """
+        env = yaml.safe_load(data)
+        os.mkdir(os.path.dirname(self.nest_env_path))
+        with open(self.nest_env_path, 'w') as f:
+            f.write(yaml.safe_dump(env))
+
+    def test_nest_all_childrens(self):
+        nest_expected_children = set(['nest_containers', 'nest_hosts'])
+        nest_children = set(self.inventory['nest_all']['children'])
+        self.assertEqual(nest_expected_children, nest_children)
+
+    def test_nest_hosts(self):
+        nest_hosts_expected = set(['aio1', 'aio2'])
+        nest_hosts = set(self.inventory['nest_hosts']['hosts'])
+        self.assertEqual(nest_hosts_expected, nest_hosts)
+
+    def test_nest_containers(self):
+        host_containers_group = 'aio1_host_containers'
+        nest_containers_expected = set([host_containers_group])
+        nest_containers = set(self.inventory['nest_containers']['children'])
+        # Ensure we have only lxc_hosts in children
+        self.assertEqual(nest_containers_expected, nest_containers)
+        # Ensure that we have host-containers group generated
+        self.assertIn(host_containers_group, self.inventory)
+        # Ensure that host-containers group is not empty
+        self.assertTrue(len(self.inventory[host_containers_group]['hosts']) > 0)
+
+
+class TestGroupNameNormalization(TestConfigCheckBase):
+
+    def test_dashed_group_is_normalized(self):
+        """
+        Test that a group with a dash is normalized to an underscore.
+        """
+        self.add_config_key('my-test_hosts', {})
+        self.add_host('my-test_hosts', 'testhost1', '10.0.0.1')
+        self.write_config()
+
+        inventory = get_inventory()
+
+        # The normalized group should exist
+        self.assertIn('my_test_hosts', inventory)
+        # The original dashed group should not exist
+        self.assertNotIn('my-test_hosts', inventory)
+        # The host should be in the normalized group
+        self.assertIn('testhost1', inventory['my_test_hosts']['hosts'])
+
+    def test_dashed_and_underscored_groups_are_merged(self):
+        """
+        Test that hosts from dashed and underscored groups are merged.
+        """
+        # Add a group with a dash
+        self.add_config_key('merge-test_hosts', {})
+        self.add_host('merge-test_hosts', 'host-dash', '10.0.0.2')
+
+        # Add the "same" group with an underscore
+        self.add_config_key('merge_test_hosts', {})
+        self.add_host('merge_test_hosts', 'host-underscore', '10.0.0.3')
+        self.write_config()
+
+        inventory = get_inventory()
+
+        # The normalized group should exist
+        self.assertIn('merge_test_hosts', inventory)
+        # The original dashed group should not exist
+        self.assertNotIn('merge-test_hosts', inventory)
+
+        # Both hosts should be in the merged group
+        hosts = inventory['merge_test_hosts']['hosts']
+        self.assertIn('host-dash', hosts)
+        self.assertIn('host-underscore', hosts)
+        self.assertEqual(len(hosts), 2)
+
+    def test_merge_groups_with_ip_conflict_raises_error(self):
+        """
+        Test that merging groups with a host IP conflict raises an error.
+        """
+        # Add a group with a dash
+        self.add_config_key('conflict-test_hosts', {})
+        self.add_host('conflict-test_hosts', 'conflicthost', '10.0.0.4')
+
+        # Add the "same" group with an underscore, and a host with the same
+        # name but different IP.
+        self.add_config_key('conflict_test_hosts', {})
+        self.add_host('conflict_test_hosts', 'conflicthost', '10.0.0.5')
+        self.write_config()
+
+        with self.assertRaises(di.MultipleIpForHostError) as context:
+            get_inventory()
+
+        expected_msg = ("Host conflicthost has both 10.0.0.4 and 10.0.0.5 "
+                        "assigned")
+        self.assertEqual(str(context.exception), expected_msg)
+
+    def test_storage_infra_normalization_and_container_creation(self):
+        """
+        Test that `storage-infra_hosts` is treated as `storage_infra_hosts`
+        and that containers are generated correctly.
+        """
+        inventory = get_inventory()
+
+        self.assertIn('storage_infra_hosts', inventory)
+        self.assertNotIn('storage-infra_hosts', inventory)
+        self.assertIn('aio1', inventory['storage_infra_hosts']['hosts'])
+
+
+class TestProviderNetworkGroupBindNormalization(TestConfigCheckBase):
+    def setUp(self):
+        super(TestProviderNetworkGroupBindNormalization, self).setUp()
+        self.env_path = os.path.join(TARGET_DIR, 'env.d/my-test.yml')
+        self._create_test_env()
+
+        self.add_config_key('my_test_group_hosts', {})
+        self.add_host('my_test_group_hosts', 'testhost1', '10.10.10.10')
+        self.add_provider_network('test_net', '192.168.100.0/24')
+
+        pns = self.user_defined_config['global_overrides']['provider_networks']
+
+        new_pn = {
+            'network': {
+                'ip_from_q': 'test_net',
+                'is_management_address': True,
+                'container_bridge': 'br-test',
+                'container_interface': 'eth-test',
+                'container_type': 'veth',
+                'group_binds': [
+                    'my-test-group_all'
+                ]
+            }
+        }
+        pns.append(new_pn)
+
+        self.write_config()
+        self.inventory = get_inventory()
+
+    def tearDown(self):
+        super(TestProviderNetworkGroupBindNormalization, self).tearDown()
+        os.remove(self.env_path)
+        os.rmdir(os.path.dirname(self.env_path))
+
+    def _create_test_env(self):
+        data = """
+            physical_skel:
+              my_test_group_hosts:
+                belongs_to:
+                  - my_test_group_all
+        """
+        env = yaml.safe_load(data)
+        env_dir = os.path.dirname(self.env_path)
+        if not os.path.exists(env_dir):
+            os.mkdir(env_dir)
+        with open(self.env_path, 'w') as f:
+            f.write(yaml.safe_dump(env))
+
+    def test_group_bind_is_normalized(self):
+        """
+        Test that a dashed group name in group_binds is normalized.
+        """
+        hostvars = self.inventory['_meta']['hostvars']['testhost1']
+        container_networks = hostvars['container_networks']
+
+        self.assertIn('test_net_address', container_networks)
+
+        net_details = container_networks['test_net_address']
+        self.assertEqual(net_details['bridge'], 'br-test')
+        self.assertNotIn('interface', net_details.keys())
+        self.assertEqual(net_details['address'], '10.10.10.10')
+
 
 if __name__ == '__main__':
     unittest.main(catchbreak=True)

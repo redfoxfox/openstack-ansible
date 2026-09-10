@@ -7,7 +7,7 @@ OpenStack has multiple storage realms to consider:
 * Object Storage (swift)
 * Image storage (glance)
 * Ephemeral storage (nova)
-* Filesystem storage (manila)
+* Shared Filesystems storage (manila)
 
 Block Storage (cinder)
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -64,7 +64,7 @@ the `LVMVolumeDriver`_ and many of the drivers for commercial storage devices.
     `cinder-manage CLI tool`_. This configuration might change if
     `cinder volume active-active support spec`_ is implemented.
 
-.. _cinder driver: https://docs.openstack.org/cinder/drivers.html
+.. _cinder driver: https://docs.openstack.org/cinder/latest/drivers.html
 .. _LVMVolumeDriver: https://docs.openstack.org/cinder/latest/drivers.html#lvmvolumedriver
 .. _limitation with container iSCSI connectivity: https://bugs.launchpad.net/ubuntu/+source/lxc/+bug/1226855
 .. _cinder-manage CLI tool: https://docs.openstack.org/cinder/latest/cli/cinder-manage.html
@@ -128,7 +128,7 @@ created.
    |    | image cache.                                                        |
    +----+---------------------------------------------------------------------+
 
-.. _glance_store drivers: https://docs.openstack.org/glance_store/drivers/
+.. _glance_store drivers: https://docs.openstack.org/glance_store/latest/user/drivers.html
 
 Ephemeral storage (nova)
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -165,8 +165,8 @@ the storage device, the Compute host, the hypervisor, and the instance.
    | 3  | The hypervisor presents the disk as a device to the instance.       |
    +----+---------------------------------------------------------------------+
 
-Filesystem storage (manila)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Shared Filesystems storage (manila)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The shared filesystem service (manila) can be configured to provide file
 systems on a variety of storage back ends as supported by the
@@ -175,6 +175,6 @@ systems on a variety of storage back ends as supported by the
 .. figure:: ../figures/manila-overview.png
    :width: 600px
 
-   The diagram shows a basic overview of the manila service.
+   The diagram shows a basic overview of the manila service (Shared Filesystems service).
 
 .. _manila_store drivers: https://docs.openstack.org/manila/latest/configuration/shared-file-systems/drivers.html

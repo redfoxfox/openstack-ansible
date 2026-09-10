@@ -182,35 +182,9 @@ def _get_backup_name(basename):
     :return: a name for a backup file based on current time
     """
 
-    utctime = datetime.datetime.utcnow()
+    utctime = datetime.datetime.now(datetime.UTC)
     utctime = utctime.strftime("%Y%m%d_%H%M%S")
     return '{}-{}.json'.format(basename, utctime)
-
-
-def write_hostnames(save_path, hostnames_ips):
-    """Write a list of all hosts and their given IP addresses
-
-    NOTE: the file is saved in json format to a file with the name
-    ``openstack_hostnames_ips.yml``
-
-    :param save_path: path to save the file to, will use default location if
-        None or an invalid path is provided
-    :param hostnames_ips: the list of all hosts and their IP addresses
-    """
-
-    file_path = dir_find(save_path)
-    hostnames_ip_file = os.path.join(file_path, 'openstack_hostnames_ips.yml')
-
-    with open(hostnames_ip_file, 'wb') as f:
-        f.write(
-            ('# This file is managed by openstack-ansible. No manual edits.\n'
-            + json.dumps(
-                hostnames_ips,
-                indent=4,
-                separators=(',', ': '),
-                sort_keys=True
-            )).encode('ascii')
-        )
 
 
 def _load_from_json(filename, preferred_path=None, raise_if_missing=True):
@@ -234,9 +208,11 @@ def _load_from_json(filename, preferred_path=None, raise_if_missing=True):
 
 
 def load_inventory(preferred_path=None, default_inv=None, filename=None):
-    """Create an inventory dictionary from the given source file or a default
-        inventory. If an inventory is found then a backup tarball is created
-        as well.
+    """Create an inventory dictionary.
+
+       Create inventory dictionary from the given source file or a default
+       inventory. If an inventory is found then a backup tarball is created
+       as well.
 
     :param preferred_path: ``str`` Path to the inventory directory to try FIRST
     :param default_inv: ``dict`` Default inventory skeleton
@@ -252,7 +228,7 @@ def load_inventory(preferred_path=None, default_inv=None, filename=None):
         inv_fn = INVENTORY_FILENAME
 
     inventory, file_loaded = _load_from_json(inv_fn, preferred_path,
-                                            raise_if_missing=False)
+                                             raise_if_missing=False)
     if file_loaded is not False:
         load_path = os.path.dirname(file_loaded)
     else:
@@ -327,8 +303,8 @@ def load_user_configuration(config_path=None):
 
     # Exit if no user_config was found and loaded
     if not user_defined_config:
-        raise MissingDataSource(_get_search_paths(config_path) +
-                                _get_search_paths(config_path, 'conf.d'))
+        raise MissingDataSource(_get_search_paths(config_path)
+                                + _get_search_paths(config_path, 'conf.d'))
 
     logger.debug("User configuration loaded from: {}".format(user_config_file))
     return user_defined_config

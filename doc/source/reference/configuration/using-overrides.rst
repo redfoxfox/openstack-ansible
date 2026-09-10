@@ -24,11 +24,12 @@ roles, like for example storing information on how to reach
 RabbitMQ from nova role.
 
 You can override the existing group vars (and host vars) by creating
-your own folder in /etc/openstack_deploy/group_vars (and
-/etc/openstack_deploy/host_vars respectively).
+your own folder in ``/etc/openstack_deploy/group_vars`` (and
+``/etc/openstack_deploy/host_vars`` respectively).
 
 If you want to change the location of the override folder, you
-can adapt your openstack-ansible.rc file, or export
+can adapt your ``user.rc`` file (see details in :ref:`defining_environment_variables_for_deployment`),
+or export
 ``GROUP_VARS_PATH`` and ``HOST_VARS_PATH`` during your shell session.
 
 Role vars
@@ -136,7 +137,6 @@ documentation section.
           - json
           - yaml
 
-
 Example task using the config_template module
 ---------------------------------------------
 
@@ -156,15 +156,13 @@ available options are "yaml", "json", and "ini".
        config_overrides: "{{ test_overrides }}"
        config_type: ini
 
-
-Here is an example override dictionary (hash)
+Here is an example override dictionary (hash):
 
 .. code-block:: yaml
 
    test_overrides:
      DEFAULT:
        new_item: 12345
-
 
 And here is the template file:
 
@@ -184,7 +182,6 @@ this:
    value2 = 123
    new_item = 12345
 
-
 Discovering available overrides
 -------------------------------
 
@@ -197,98 +194,19 @@ The list of overrides available may be found by executing:
 
 .. code-block:: bash
 
-    find . -name "main.yml" -exec grep '_.*_overrides:' {} \; \
-        | grep -v "^#" \
+    ls /etc/ansible/roles/*/defaults/main.yml -1 \
+        | xargs -I {} grep '_.*_overrides:' {} \
+        | grep -Ev "^#|^\s" \
         | sort -u
 
-The following override variables are currently available:
+.. note::
 
-Galera:
-    * galera_client_my_cnf_overrides
-    * galera_my_cnf_overrides
-    * galera_cluster_cnf_overrides
-    * galera_debian_cnf_overrides
-
-Telemetry service (ceilometer):
-    * ceilometer_policy_overrides
-    * ceilometer_ceilometer_conf_overrides
-    * ceilometer_event_definitions_yaml_overrides
-    * ceilometer_event_pipeline_yaml_overrides
-    * ceilometer_pipeline_yaml_overrides
-
-Block Storage (cinder):
-    * cinder_policy_overrides
-    * cinder_rootwrap_conf_overrides
-    * cinder_api_paste_ini_overrides
-    * cinder_cinder_conf_overrides
-
-Image service (glance):
-    * glance_glance_api_paste_ini_overrides
-    * glance_glance_api_conf_overrides
-    * glance_glance_cache_conf_overrides
-    * glance_glance_manage_conf_overrides
-    * glance_glance_registry_paste_ini_overrides
-    * glance_glance_registry_conf_overrides
-    * glance_glance_scrubber_conf_overrides
-    * glance_glance_scheme_json_overrides
-    * glance_policy_overrides
-
-Orchestration service (heat):
-    * heat_heat_conf_overrides
-    * heat_api_paste_ini_overrides
-    * heat_default_yaml_overrides
-    * heat_aws_rds_dbinstance_yaml_overrides
-    * heat_policy_overrides
-
-Identity service (keystone):
-    * keystone_keystone_conf_overrides
-    * keystone_keystone_default_conf_overrides
-    * keystone_keystone_paste_ini_overrides
-    * keystone_policy_overrides
-
-Networking service (neutron):
-    * neutron_neutron_conf_overrides
-    * neutron_ml2_conf_ini_overrides
-    * neutron_dhcp_agent_ini_overrides
-    * neutron_api_paste_ini_overrides
-    * neutron_rootwrap_conf_overrides
-    * neutron_policy_overrides
-    * neutron_dnsmasq_neutron_conf_overrides
-    * neutron_l3_agent_ini_overrides
-    * neutron_metadata_agent_ini_overrides
-    * neutron_metering_agent_ini_overrides
-
-Compute service (nova):
-    * nova_nova_conf_overrides
-    * nova_rootwrap_conf_overrides
-    * nova_api_paste_ini_overrides
-    * nova_policy_overrides
-
-Object Storage service (swift):
-    * swift_swift_conf_overrides
-    * swift_swift_dispersion_conf_overrides
-    * swift_proxy_server_conf_overrides
-    * swift_account_server_conf_overrides
-    * swift_account_server_replicator_conf_overrides
-    * swift_container_server_conf_overrides
-    * swift_container_server_replicator_conf_overrides
-    * swift_object_server_conf_overrides
-    * swift_object_server_replicator_conf_overrides
-
-Tempest:
-    * tempest_tempest_conf_overrides
-
-pip:
-    * pip_global_conf_overrides
-
-  .. note::
-
-     Possible additional overrides can be found in the "Tunable Section"
-     of each role's ``main.yml`` file, such as
-     ``/etc/ansible/roles/role_name/defaults/main.yml``.
+   Possible additional overrides can be found in the "Tunable Section"
+   of each role's ``main.yml`` file, such as
+   ``/etc/ansible/roles/role_name/defaults/main.yml``.
 
 Overriding OpenStack configuration defaults
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 OpenStack has many configuration options available in ``.conf`` files
 (in a standard ``INI`` file format),
@@ -344,6 +262,21 @@ To do this, you use the following configuration entry in the
    ``<service>_<filename>_<file extension>_overrides``. For example, the variable
    name used in these examples to add parameters to the ``nova.conf`` file is
    ``nova_nova_conf_overrides``.
+
+The same way you can apply overrides to the uwsgi services. For example:
+
+.. code-block:: yaml
+
+    nova_api_os_compute_uwsgi_ini_overrides:
+      uwsgi:
+        limit: 1024
+
+.. note::
+
+  Some roles, like uwsgi, are used for lot of roles, and have "special" overrides,
+  (like `uwsgi_ini_overrides`) which can be defined to impact all services which
+  are using uwsgi. These variables are "special" as they will have precedence over
+  role defined `*_uwsgi_ini_overrides`.
 
 You can also apply overrides on a per-host basis with the following
 configuration in the ``/etc/openstack_deploy/openstack_user_config.yml``
@@ -457,3 +390,169 @@ To do this, you use the following configuration entry in the
    ``<service>_<filename>_<file extension>_overrides``. For example, the variable
    name used in this example to define a meter exclusion in the ``pipeline.yml`` file
    for the Telemetry service (ceilometer) is ``ceilometer_pipeline_yaml_overrides``.
+
+Overriding OpenStack upper constraints
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Each OpenStack release uses an ``upper-constraints.txt`` file to define the
+maximum permitted version of each Python package. In some cases it may be
+necessary to override this file, for example when your local deployment needs
+to take advantage of a bug fix. Care should be taken when modifying this file
+as OpenStack services may not have been tested against more recent package
+versions.
+
+To override the upper constraints for a deployment, clone the OpenStack
+requirements git repository, either storing it as a fork at a URL of your
+choice, or within the local filesystem of the host you are using to deploy
+OpenStack Ansible from. Once cloned, switch to the branch which matches the
+name of your deployed OpenStack version, and modify the upper constraints as
+required.
+
+Next, edit your ``/etc/openstack_deploy/user_variables.yml`` file to indicate
+the path to the requirements git repository, and the git hash of the commit
+containing your changes using the ``requirements_git_repo`` and
+``requirements_git_install_branch`` variables. When using the local
+filesystem, the ``requirements_git_repo`` should start with ``file://``.
+
+Finally, run the ``repo-install.yml`` playbook to upload these modified
+constraints to your repo host(s).
+
+Overriding Python dependencies for services in OpenStack-Ansible
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+There are two main ways to change the version/source of a Python package for
+an OpenStack service managed by OpenStack-Ansible:
+
+.. warning::
+
+   Overriding system- or service-level Python dependencies should be done with care:
+    - Always document your changes and their rationale (security fix, local feature, etc.)
+    - Plan periodic review/removal of overrides after upgrade or once patches are upstreamed.
+    - Validate carefully as such overrides can impact stability, upgrades, and maintenance.
+
+Override with a released version (PyPI)
+---------------------------------------
+
+You can force a service to use a specific official PyPI version of a dependency by copying
+the internal constraints file, editing it to set the desired package version,
+and then using it for the service.
+
+.. code-block:: yaml
+
+    <service>_upper_constraints_url: "{{ openstack_repo_url }}/constraints/upper_constraints-xx.txt"
+
+Apply the override
+^^^^^^^^^^^^^^^^^^
+
+Redeploy the affected service with:
+
+.. code-block:: bash
+
+    openstack-ansible openstack.osa.repo
+    openstack-ansible openstack.osa.<service> -e "venv_rebuild=true"
+
+.. note::
+
+   Running the ``openstack.osa.repo`` playbook is necessary to make the
+   constraint file available to the service, as it copies the file from
+   ``/etc/openstack_deploy/upper-constraints`` into the repo host(s).
+
+Override with a commit/branch
+-----------------------------
+
+Override file: ``/etc/openstack_deploy/user_xx.yml`` using a Git source:
+
+.. code-block:: yaml
+
+    xx_user_pip_packages:
+      - "git+https://github.com/openstack/<package_name>@SHA_commit"
+
+    xx_git_constraints: "{{ lookup('file', '/etc/openstack_deploy/upper-constraints/upper_constraints_' + requirements_git_install_branch + '.txt').split('\n') | reject('match', '^(<package_name>)=') | list }}"
+
+    <service>_user_pip_packages: "{{ xx_user_pip_packages }}"
+    <service>_git_constraints: "{{ xx_git_constraints }}"
+
+Apply the override
+^^^^^^^^^^^^^^^^^^
+
+Redeploy the affected service with:
+
+.. code-block:: bash
+
+    openstack-ansible openstack.osa.<service> -e "venv_rebuild=true"
+
+Files involved and verification
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+After deployment, verify install in the relevant venv, e.g.:
+
+.. code-block:: bash
+
+    source /openstack/venvs/<service>/bin/activate
+    pip show <your_package>
+
+Check constraint/requirements files inside the venv for correctness.
+
+Example
+-------
+
+Applying a CVE patch to keystonemiddleware (override the Python package)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Override with a released version (PyPI)
+
+You can force a service to use a specific official PyPI version of
+a dependency, e.g. :
+
+.. code-block:: yaml
+
+    keystone_upper_constraints_url: "{{ openstack_repo_url }}/constraints/upper_constraints-fixe-keystonemiddleware.txt"
+
+* Apply the override
+
+Redeploy the affected service with:
+
+.. code-block:: bash
+
+    openstack-ansible openstack.osa.repo
+    openstack-ansible openstack.osa.keystone -e "venv_rebuild=true"
+
+* Override with a commit/branch (unreleased patch, feature, or fix)
+
+Suppose you need to urgently patch for `CVE-2026-22797 <https://vulmon.com/vulnerabilitydetails?qid=CVE-2026-22797>`_ not released yet.
+
+Override file: ``/etc/openstack_deploy/user_zz-ossa-2026.1.yml``
+
+.. code-block:: yaml
+
+    ossa_2026_1_user_pip_packages:
+      - "git+https://github.com/openstack/keystonemiddleware@52acf50ca54b4db7f905f0d45736b6eb25ecf3b5"
+
+    ossa_2026_1_git_constraints: "{{ lookup('file', '/etc/openstack_deploy/upper-constraints/upper_constraints_' + requirements_git_install_branch + '.txt').split('\n') | reject('match', '^(keystonemiddleware)=') | list }}"
+
+    keystone_user_pip_packages: "{{ ossa_2026_1_user_pip_packages }}"
+    keystone_git_constraints: "{{ ossa_2026_1_git_constraints }}"
+
+* Apply the override
+
+Redeploy the affected service with:
+
+.. code-block:: bash
+
+    openstack-ansible openstack.osa.keystone -e "venv_rebuild=true"
+
+Check with:
+
+.. code-block:: bash
+
+    source /openstack/venvs/keystone/bin/activate
+    pip show keystonemiddleware
+
+More information and upstream references
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+source-overrides_.
+
+`Example upstream CVE patch (KeystoneMiddleware Gerrit) <https://review.opendev.org/c/openstack/keystonemiddleware/+/973499>`_
+
+.. _source-overrides: https://docs.openstack.org/openstack-ansible/latest/user/source-overrides/index.html

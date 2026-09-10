@@ -12,10 +12,10 @@ container_skel:
   ceilometer_central_container:
     properties:
       is_metal: true
-  ceph-mon_container:
+  ceph_mon_container:
     properties:
       is_metal: true
-  ceph-rgw_container:
+  ceph_rgw_container:
     properties:
       is_metal: true
   cinder_api_container:
@@ -24,13 +24,7 @@ container_skel:
   cinder_volumes_container:
     properties:
       is_metal: true
-  congress_container:
-    properties:
-      is_metal: true
   designate_container:
-    properties:
-      is_metal: true
-  etcd_container:
     properties:
       is_metal: true
   galera_container:
@@ -52,9 +46,6 @@ container_skel:
     properties:
       is_metal: true
   ironic_api_container:
-    properties:
-      is_metal: true
-  ironic_server_container:
     properties:
       is_metal: true
   ironic_compute_container:
@@ -81,16 +72,16 @@ container_skel:
   memcached_container:
     properties:
       is_metal: true
-  metering-compute_container:
+  metering_compute_container:
     properties:
       is_metal: true
   mistral_container:
     properties:
       is_metal: true
-  murano_container:
+  neutron_agents_container:
     properties:
       is_metal: true
-  neutron_agents_container:
+  neutron_ovn_northd_container:
     properties:
       is_metal: true
   neutron_server_container:
@@ -105,25 +96,13 @@ container_skel:
   octavia_server_container:
     properties:
       is_metal: true
-  panko_container:
-    properties:
-      is_metal: true
   placement_container:
     properties:
       is_metal: true
   repo_container:
     properties:
       is_metal: true
-  qdrouterd_container:
-    properties:
-      is_metal: true
   rabbit_mq_container:
-    properties:
-      is_metal: true
-  rsyslog_container:
-    properties:
-      is_metal: true
-  sahara_container:
     properties:
       is_metal: true
   swift_remote_container:
@@ -151,5 +130,11 @@ container_skel:
     properties:
       is_metal: true
   utility_container:
+    properties:
+      is_metal: true
+  zun_api_container:
+    properties:
+      is_metal: true
+  zun_compute_container:
     properties:
       is_metal: true

@@ -2,7 +2,8 @@ Generating the Inventory
 ========================
 
 The script that creates the inventory is located at
-``inventory/dynamic_inventory.py``.
+``inventory/dynamic_inventory.py`` and installed into the ansible-runtime
+virtualenv as ``openstack-ansible-inventory``.
 
 This section explains how ansible runs the inventory, and how
 you can run it manually to see its behavior.
@@ -22,12 +23,20 @@ Run the following command:
     # from the root folder of cloned OpenStack-Ansible repository
     inventory/dynamic_inventory.py --config /etc/openstack_deploy/
 
+Dynamic inventory script is also installed inside virtualenv as a script. So
+alternatively you can run following:
+
+.. code-block:: bash
+
+    source /opt/ansible-runtime/bin/activate
+    openstack-ansible-inventory --config /etc/openstack_deploy/
+
 This invocation is useful when testing changes to the dynamic inventory script.
 
 Inputs
 ~~~~~~
 
-The ``dynamic_inventory.py`` takes the ``--config`` argument for the directory
+The ``openstack-ansible-inventory`` takes the ``--config`` argument for the directory
 holding configuration from which to create the inventory. If not specified,
 the default is ``/etc/openstack_deploy/``.
 
@@ -37,10 +46,6 @@ In addition to this argument, the base environment skeleton is provided in the
 Should an ``env.d`` directory be found in the directory specified by
 ``--config``, its contents will be added to the base environment, overriding
 any previous contents in the event of conflicts.
-
-.. note::
-
-   In all versions prior to |previous_release_formal_name|, this argument was ``--file``.
 
 The following file must be present in the configuration directory:
 
@@ -105,7 +110,7 @@ the inventory for the playbooks.
 Checking inventory configuration for errors
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Using the ``--check`` flag when running ``dynamic_inventory.py`` will run the
+Using the ``--check`` flag when running ``openstack-ansible-inventory`` will run the
 inventory build process and look for known errors, but not write any files to
 disk.
 
@@ -116,7 +121,7 @@ This check does not do YAML syntax validation, though it will fail if there
 are unparseable errors.
 
 Writing debug logs
-~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 
 The ``--debug/-d`` parameter allows writing of a detailed log file for
 debugging the inventory script's behavior. The output is written to
@@ -125,3 +130,38 @@ debugging the inventory script's behavior. The output is written to
 The ``inventory.log`` file is appended to, not overwritten.
 
 Like ``--check``, this flag is not invoked when running from ansible.
+
+Running with tox
+~~~~~~~~~~~~~~~~
+
+In some cases you might want to generate inventory on operator local machines
+after altering openstack_user_config.yml or env.d/conf.d files. Given that
+you already have ``openstack_deploy`` directory on such machine, you can create
+tox.ini file in that directory with following content:
+
+.. code-block::
+
+  [tox]
+  envlist = generate_inventory
+
+  [testenv]
+  skip_install = true
+  usedevelop = true
+  allowlist_externals =
+      bash
+
+  [testenv:generate_inventory]
+  deps = -r https://opendev.org/openstack/openstack-ansible/raw/branch/master/requirements.txt
+  install_command =
+      pip install -c https://releases.openstack.org/constraints/upper/master {packages} -e git+https://opendev.org/openstack/openstack-ansible@master\#egg=openstack-ansible
+  commands =
+      openstack-ansible-inventory --config {toxinidir}/openstack_deploy
+
+Then you can run a command to generate inventory using tox:
+
+.. code-block:: bash
+
+  tox -e generate_inventory
+
+As a result you will get your openstack_user_config.json updated. You can use
+this method also to verify validity of the inventory.

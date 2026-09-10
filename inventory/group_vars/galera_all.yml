@@ -23,21 +23,54 @@ galera_container_bind_mounts:
   - bind_dir_path: "/var/lib/mysql"
     mount_path: "/openstack/{{ inventory_hostname }}"
 
-# Disable PrivateDevices for MariaDB on CentOS 7
-# See https://bugs.launchpad.net/openstack-ansible/+bug/1697531 for details.
-galera_disable_privatedevices: "{{ not is_metal }}"
-
 # By default galera_monitoring xinetd app is open to 0.0.0.0/0
 # This makes sure the monitoring is only restricted to the necessary nodes:
 # the load balancers, and the galera nodes.
 galera_monitoring_allowed_source: >-
   {{
     groups['galera_all'] | union(groups['haproxy'])
-      | map('extract', hostvars, 'ansible_host')
+      | map('extract', hostvars, 'management_address')
       | list
       | join(' ') ~ ' 127.0.0.1'
+  }}
+
+# Accept PROXY protocol information from the load balancers
+# See https://mariadb.com/kb/en/proxy-protocol-support for details
+galera_server_proxy_protocol_networks: >-
+  {{
+    groups['haproxy']
+      | map('extract', hostvars, 'management_address')
+      | list
+      | join(',') ~ ', localhost, ::1'
   }}
 
 # Galera sessions are long lived, so if we do endpoint maintenance we will
 # force kill the sessions to force a failover to the active endpoint.
 haproxy_shutdown_sessions: yes
+
+haproxy_galera_allowlist_networks: "{{ haproxy_allowlist_networks }}"
+
+haproxy_galera_service:
+  haproxy_service_name: galera
+  haproxy_backend_nodes: "{{ (groups['galera_all'] | default([]))[:1] }}"  # list expected
+  haproxy_backup_nodes: "{{ (groups['galera_all'] | default([]))[1:] }}"
+  haproxy_bind: >-
+    {{ [{
+          'address': haproxy_bind_internal_lb_vip_address | default(internal_lb_vip_address),
+          'interface': haproxy_bind_internal_lb_vip_interface | default('')
+    }] }}
+  haproxy_port: 3306
+  haproxy_check_port: 9200
+  haproxy_balance_type: tcp
+  haproxy_stick_table_enabled: False
+  haproxy_timeout_client: 5000s
+  haproxy_timeout_server: 5000s
+  haproxy_backend_httpcheck_options:
+    - 'send hdr User-Agent "osa-haproxy-healthcheck" meth HEAD'
+  haproxy_backend_server_options:
+    - "send-proxy-v2"
+  haproxy_allowlist_networks: "{{ haproxy_galera_allowlist_networks }}"
+  haproxy_service_enabled: "{{ groups['galera_all'] is defined and groups['galera_all'] | length > 0 }}"
+
+galera_haproxy_services:
+  - "{{ haproxy_galera_service | combine(haproxy_galera_service_overrides | default({})) }}"

@@ -14,13 +14,13 @@
 # limitations under the License.
 
 component_skel:
+  ironic_neutron_agent:
+    belongs_to:
+      - neutron_all
   neutron_agent:
     belongs_to:
       - neutron_all
   neutron_dhcp_agent:
-    belongs_to:
-      - neutron_all
-  neutron_linuxbridge_agent:
     belongs_to:
       - neutron_all
   neutron_openvswitch_agent:
@@ -44,7 +44,13 @@ component_skel:
   neutron_server:
     belongs_to:
       - neutron_all
-  opendaylight:
+  neutron_ovn_controller:
+    belongs_to:
+      - neutron_all
+  neutron_ovn_gateway:
+    belongs_to:
+      - neutron_all
+  neutron_ovn_northd:
     belongs_to:
       - neutron_all
 
@@ -52,12 +58,13 @@ container_skel:
   neutron_agents_container:
     belongs_to:
       - network_containers
+      - network_agent_containers
     contains:
+      - ironic_neutron_agent
       - neutron_agent
       - neutron_bgp_dragent
       - neutron_dhcp_agent
       - neutron_l3_agent
-      - neutron_linuxbridge_agent
       - neutron_metadata_agent
       - neutron_metering_agent
       - neutron_openvswitch_agent
@@ -67,14 +74,51 @@ container_skel:
   neutron_server_container:
     belongs_to:
       - network_containers
+      - network_infra_containers
     contains:
       - neutron_server
-      - opendaylight
+  neutron_ovn_gateway_container:
+    belongs_to:
+      - network_gateway_containers
+    contains:
+      - neutron_ovn_controller
+      - neutron_ovn_gateway
+    properties:
+      is_metal: true
+  neutron_ovn_northd_container:
+    belongs_to:
+      - network_northd_containers
+    contains:
+      - neutron_ovn_northd
 
 physical_skel:
   network_containers:
     belongs_to:
       - all_containers
   network_hosts:
+    belongs_to:
+      - hosts
+  network_agent_containers:
+    belongs_to:
+      - all_containers
+  network_agent_hosts:
+    belongs_to:
+      - hosts
+  network_infra_containers:
+    belongs_to:
+      - all_containers
+  network_infra_hosts:
+    belongs_to:
+      - hosts
+  network_gateway_containers:
+    belongs_to:
+      - all_containers
+  network_gateway_hosts:
+    belongs_to:
+      - hosts
+  network_northd_containers:
+    belongs_to:
+      - all_containers
+  network_northd_hosts:
     belongs_to:
       - hosts

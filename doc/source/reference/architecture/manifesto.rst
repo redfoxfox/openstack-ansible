@@ -1,16 +1,10 @@
 OpenStack-Ansible Manifesto
 ===========================
 
-This project will be a **Batteries included** project. Which
-means deployer can expect that deploying from any of the named
-feature branches or tags should provide an OpenStack cloud
-built for production which will be available at the successful
-completion of the deployment.
-
 Project scope
 ~~~~~~~~~~~~~
 
-This project will be a **Batteries included** project. Which means deployer
+This will be a '**Batteries included**' project. Which means deployer
 can expect that deploying from any of the named feature branches or tags should
 provide an OpenStack cloud built for production which will be
 available at the successful completion of the deployment.
@@ -22,8 +16,7 @@ This project does **not** PXE boot hosts. Host setup and lifecycle management
 is left to the deployer. This project also requires that bridges are setup
 within the hosts to allow the containers to attach to a local bridge for
 network access.
-See also the :dev_docs:`Container networking
-<reference/architecture/container-networking.html>`.
+See also the :ref:`container-networking`.
 
 Ansible Usage
 ~~~~~~~~~~~~~
@@ -33,17 +26,16 @@ deployment. Ansible manages systems by using Secure Shell (SSH)
 instead of unique protocols that require remote daemons or agents.
 
 Ansible uses playbooks written in the YAML language for orchestration.
-For more information, see `Ansible - Intro to
-Playbooks <https://docs.ansible.com/playbooks_intro.html>`_.
+For more information, see `Ansible playbooks <https://docs.ansible.com/ansible/latest/user_guide/playbooks_intro.html>`_.
 
 Ansible is a simple yet powerful orchestration tool that is ideally
 equipped for deploying OpenStack-powered clouds. The declarative nature of
 Ansible allows the deployer to turn an entire deployment into a rather
 simple set of instructions.
 
-Roles within the Openstack-Ansible umbrella are built using Ansible
+Roles within the OpenStack-Ansible umbrella are built using Ansible
 best practices and contain namespaced variables that are *human*
-understandable.  All roles are independant of each other and testable
+understandable. All roles are independant of each other and testable
 separately.
 
 All roles are built as Galaxy compatible roles even when the given role is
